@@ -10,10 +10,13 @@ from app.dependencies import get_current_user
 from app.models.dataset import Dataset
 from app.models.user import User
 from app.models.dataset_profile import DatasetProfile
+from app.models.data_quality_report import DataQualityReport
 from app.schemas.dataset import DatasetListResponse, DatasetResponse, UploadResponse
 from app.schemas.profiling import DatasetProfileResponse
+from app.schemas.quality import DataQualityResponse
 from app.services.data_engine.ingester import DataIngestionError, get_shape, read_file
 from app.services.data_engine.profiler import generate_profile
+from app.services.data_engine.quality import analyze_quality
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
 
@@ -161,3 +164,44 @@ def get_dataset_profile(
     db.commit()
     
     return profile_response
+
+
+@router.get("/{dataset_id}/quality", response_model=DataQualityResponse)
+def get_dataset_quality(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+        
+    # Check for existing report
+    report = db.query(DataQualityReport).filter(DataQualityReport.dataset_id == dataset_id).first()
+    if report:
+        return DataQualityResponse.model_validate(report.report_data)
+        
+    # If no report, generate it
+    if not os.path.exists(dataset.file_path):
+        raise HTTPException(status_code=404, detail="Physical file missing")
+        
+    try:
+        df = read_file(dataset.file_path)
+    except DataIngestionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+        
+    quality_response = analyze_quality(df, dataset_id=dataset_id)
+    
+    # Save the report
+    new_report = DataQualityReport(
+        dataset_id=dataset_id,
+        quality_score=quality_response.quality_score,
+        report_data=quality_response.model_dump()
+    )
+    db.add(new_report)
+    db.commit()
+    
+    return quality_response

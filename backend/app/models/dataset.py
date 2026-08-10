@@ -35,3 +35,4 @@ class Dataset(Base):
 
     owner: Mapped["User"] = relationship("User", back_populates="datasets")
     profile: Mapped["DatasetProfile"] = relationship("DatasetProfile", back_populates="dataset", uselist=False)
+    quality_report: Mapped["DataQualityReport"] = relationship("DataQualityReport", back_populates="dataset", uselist=False)
