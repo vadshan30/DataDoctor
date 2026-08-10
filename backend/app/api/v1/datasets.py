@@ -9,8 +9,11 @@ from app.core.database import get_db
 from app.dependencies import get_current_user
 from app.models.dataset import Dataset
 from app.models.user import User
+from app.models.dataset_profile import DatasetProfile
 from app.schemas.dataset import DatasetListResponse, DatasetResponse, UploadResponse
+from app.schemas.profiling import DatasetProfileResponse
 from app.services.data_engine.ingester import DataIngestionError, get_shape, read_file
+from app.services.data_engine.profiler import generate_profile
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
 
@@ -118,3 +121,43 @@ def upload_dataset(
         message="Dataset uploaded successfully",
         dataset=DatasetResponse.model_validate(dataset),
     )
+
+
+@router.get("/{dataset_id}/profile", response_model=DatasetProfileResponse)
+def get_dataset_profile(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+        
+    # Check for existing profile
+    profile = db.query(DatasetProfile).filter(DatasetProfile.dataset_id == dataset_id).first()
+    if profile:
+        return DatasetProfileResponse.model_validate(profile.profile_data)
+        
+    # If no profile, generate it
+    if not os.path.exists(dataset.file_path):
+        raise HTTPException(status_code=404, detail="Physical file missing")
+        
+    try:
+        df = read_file(dataset.file_path)
+    except DataIngestionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+        
+    profile_response = generate_profile(df)
+    
+    # Save the profile
+    new_profile = DatasetProfile(
+        dataset_id=dataset_id,
+        profile_data=profile_response.model_dump()
+    )
+    db.add(new_profile)
+    db.commit()
+    
+    return profile_response

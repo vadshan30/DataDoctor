@@ -65,6 +65,7 @@ def _reset_state(monkeypatch):
 
 def _unique_email():
     global _counter
+    _counter += 1
     return f"user_{_counter}@test.com"
 
 
