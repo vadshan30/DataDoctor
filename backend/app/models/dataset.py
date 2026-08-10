@@ -17,6 +17,9 @@ class Dataset(Base):
     file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     num_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     num_columns: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    file_type: Mapped[str] = mapped_column(String(10), nullable=False, default="unknown")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="uploaded")
     owner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
