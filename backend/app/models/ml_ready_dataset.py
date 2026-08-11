@@ -45,3 +45,6 @@ class MLReadyDataset(Base):
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="ml_ready_datasets")
     engineered_dataset: Mapped["EngineeredDataset | None"] = relationship("EngineeredDataset")
     cleaned_dataset: Mapped["CleanedDataset | None"] = relationship("CleanedDataset")
+    experiments: Mapped[list["Experiment"]] = relationship(
+        "Experiment", back_populates="ml_ready_dataset", cascade="all, delete-orphan"
+    )

@@ -27,6 +27,13 @@ from app.schemas.ml_preparation import (
     MLReadyDatasetResponse,
     MLReadyDatasetListResponse,
 )
+from app.schemas.experiment import (
+    ExperimentCreateRequest,
+    ExperimentResponse,
+    ExperimentListResponse,
+)
+from app.models.experiment import Experiment
+from app.models.model import TrainedModel
 from app.services.data_engine.ingester import DataIngestionError, get_shape, read_file
 from app.services.data_engine.profiler import generate_profile
 from app.services.data_engine.quality import analyze_quality
@@ -36,6 +43,7 @@ from app.services.data_engine.preprocessor import (
     MLPreparationError,
     prepare_ml_dataset,
 )
+from app.services.ml_engine.trainer import ExperimentError, run_experiment
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
 
@@ -525,3 +533,220 @@ def get_latest_prepared_dataset(
         raise HTTPException(status_code=404, detail="No ML-ready dataset preparation found")
 
     return MLReadyDatasetResponse.model_validate(latest)
+
+
+@router.post("/{dataset_id}/experiments")
+def create_experiment(
+    dataset_id: int,
+    request: ExperimentCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    ml_ready = (
+        db.query(MLReadyDataset)
+        .filter(
+            MLReadyDataset.id == request.ml_ready_dataset_id,
+            MLReadyDataset.dataset_id == dataset_id,
+        )
+        .first()
+    )
+    if not ml_ready:
+        raise HTTPException(
+            status_code=404,
+            detail="ML-ready dataset not found for this dataset",
+        )
+
+    ensure_directories()
+
+    try:
+        result = run_experiment(
+            db_session=db,
+            dataset_id=dataset_id,
+            ml_ready_dataset_id=request.ml_ready_dataset_id,
+            experiment_name=request.experiment_name,
+            target_column=request.target_column,
+            problem_type=request.problem_type,
+            test_size=ml_ready.test_size,
+            random_state=ml_ready.random_state,
+        )
+    except ExperimentError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        )
+    except (DataIngestionError, FileNotFoundError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Experiment failed: {str(e)}")
+
+    return result
+
+
+@router.get("/{dataset_id}/experiments", response_model=ExperimentListResponse)
+def list_experiments(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    experiments = (
+        db.query(Experiment)
+        .filter(Experiment.dataset_id == dataset_id)
+        .order_by(Experiment.created_at.desc())
+        .all()
+    )
+
+    return ExperimentListResponse(
+        experiments=[ExperimentResponse.model_validate(e) for e in experiments],
+        total=len(experiments),
+    )
+
+
+@router.get("/{dataset_id}/experiments/{experiment_id}")
+def get_experiment(
+    dataset_id: int,
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    experiment = (
+        db.query(Experiment)
+        .filter(
+            Experiment.id == experiment_id,
+            Experiment.dataset_id == dataset_id,
+        )
+        .first()
+    )
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    trained_models = (
+        db.query(TrainedModel)
+        .filter(TrainedModel.experiment_id == experiment.id)
+        .order_by(TrainedModel.id)
+        .all()
+    )
+
+    models_list = [
+        {
+            "model_id": idx,
+            "model_name": tm.name,
+            "algorithm": tm.algorithm,
+            "model_type": tm.model_type,
+            "status": tm.status,
+            "metrics": tm.metrics,
+            "hyperparameters": tm.hyperparameters,
+            "training_rows": tm.training_rows,
+            "validation_rows": tm.validation_rows,
+            "feature_count": tm.feature_count,
+        }
+        for idx, tm in enumerate(trained_models)
+    ]
+
+    return {
+        "experiment_id": experiment.id,
+        "dataset_id": experiment.dataset_id,
+        "ml_ready_dataset_id": experiment.ml_ready_dataset_id,
+        "name": experiment.name,
+        "experiment_type": experiment.experiment_type,
+        "problem_type": experiment.problem_type,
+        "target_column": experiment.target_column,
+        "test_size": experiment.test_size,
+        "random_state": experiment.random_state,
+        "status": experiment.status,
+        "best_model_id": _find_model_index(trained_models, experiment.best_model_id) if experiment.best_model_id else None,
+        "best_metric": experiment.best_metric,
+        "best_score": experiment.best_score,
+        "error_message": experiment.error_message,
+        "created_at": experiment.created_at,
+        "updated_at": experiment.updated_at,
+        "completed_at": experiment.completed_at,
+        "models": models_list,
+    }
+
+
+@router.get("/{dataset_id}/experiments/{experiment_id}/best")
+def get_best_model(
+    dataset_id: int,
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    experiment = (
+        db.query(Experiment)
+        .filter(
+            Experiment.id == experiment_id,
+            Experiment.dataset_id == dataset_id,
+        )
+        .first()
+    )
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    if experiment.best_model_id is None:
+        raise HTTPException(status_code=404, detail="No best model selected for this experiment")
+
+    trained_models = (
+        db.query(TrainedModel)
+        .filter(TrainedModel.experiment_id == experiment.id)
+        .order_by(TrainedModel.id)
+        .all()
+    )
+
+    best_index = _find_model_index(trained_models, experiment.best_model_id)
+
+    best_model = next(
+        (tm for tm in trained_models if tm.id == experiment.best_model_id),
+        None,
+    )
+    if not best_model:
+        raise HTTPException(status_code=404, detail="Best model record not found")
+
+    return {
+        "experiment_id": experiment.id,
+        "model_id": best_index,
+        "model_name": best_model.name,
+        "algorithm": best_model.algorithm,
+        "model_type": best_model.model_type,
+        "problem_type": experiment.problem_type,
+        "metrics": best_model.metrics,
+        "hyperparameters": best_model.hyperparameters,
+        "training_rows": best_model.training_rows,
+        "validation_rows": best_model.validation_rows,
+        "feature_count": best_model.feature_count,
+    }
+
+
+def _find_model_index(trained_models: list[TrainedModel], best_db_id: int | None) -> int | None:
+    if best_db_id is None:
+        return None
+    for idx, tm in enumerate(trained_models):
+        if tm.id == best_db_id:
+            return idx
+    return None
