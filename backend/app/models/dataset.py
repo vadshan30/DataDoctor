@@ -38,3 +38,6 @@ class Dataset(Base):
     quality_report: Mapped["DataQualityReport"] = relationship("DataQualityReport", back_populates="dataset", uselist=False)
     cleaned_datasets: Mapped[list["CleanedDataset"]] = relationship("CleanedDataset", back_populates="dataset", cascade="all, delete-orphan")
     engineered_datasets: Mapped[list["EngineeredDataset"]] = relationship("EngineeredDataset", back_populates="dataset", cascade="all, delete-orphan")
+    ml_ready_datasets: Mapped[list["MLReadyDataset"]] = relationship(
+        "MLReadyDataset", back_populates="dataset", cascade="all, delete-orphan"
+    )

@@ -13,6 +13,7 @@ from app.models.dataset_profile import DatasetProfile
 from app.models.data_quality_report import DataQualityReport
 from app.models.cleaned_dataset import CleanedDataset
 from app.models.engineered_dataset import EngineeredDataset
+from app.models.ml_ready_dataset import MLReadyDataset
 from app.schemas.dataset import DatasetListResponse, DatasetResponse, UploadResponse
 from app.schemas.profiling import DatasetProfileResponse
 from app.schemas.quality import DataQualityResponse
@@ -21,11 +22,20 @@ from app.schemas.feature_engineering import (
     EngineeringResultListResponse,
     EngineeringResultResponse,
 )
+from app.schemas.ml_preparation import (
+    PrepareRequest,
+    MLReadyDatasetResponse,
+    MLReadyDatasetListResponse,
+)
 from app.services.data_engine.ingester import DataIngestionError, get_shape, read_file
 from app.services.data_engine.profiler import generate_profile
 from app.services.data_engine.quality import analyze_quality
 from app.services.data_engine.cleaner import clean_dataset
 from app.services.data_engine.feature_engineer import engineer_features
+from app.services.data_engine.preprocessor import (
+    MLPreparationError,
+    prepare_ml_dataset,
+)
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
 
@@ -370,3 +380,148 @@ def get_engineered_datasets(
         engineered_datasets=[EngineeringResultResponse.model_validate(e) for e in engineered],
         total=len(engineered),
     )
+
+
+@router.post("/{dataset_id}/prepare", response_model=MLReadyDatasetResponse)
+def prepare_ml_dataset_endpoint(
+    dataset_id: int,
+    request: PrepareRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    # Prefer the latest engineered dataset; fall back to cleaned; then original
+    engineered = (
+        db.query(EngineeredDataset)
+        .filter(EngineeredDataset.dataset_id == dataset_id)
+        .order_by(EngineeredDataset.created_at.desc())
+        .first()
+    )
+
+    source_dataset_type = "original"
+    cleaned_dataset_id_ref = None
+    engineered_dataset_id_ref = None
+
+    if engineered and os.path.exists(engineered.engineered_file_path):
+        source_file_path = engineered.engineered_file_path
+        engineered_dataset_id_ref = engineered.id
+        source_dataset_type = "engineered"
+    else:
+        cleaned = (
+            db.query(CleanedDataset)
+            .filter(CleanedDataset.dataset_id == dataset_id)
+            .order_by(CleanedDataset.created_at.desc())
+            .first()
+        )
+        if cleaned and os.path.exists(cleaned.cleaned_file_path):
+            source_file_path = cleaned.cleaned_file_path
+            cleaned_dataset_id_ref = cleaned.id
+            source_dataset_type = "cleaned"
+        elif os.path.exists(dataset.file_path):
+            source_file_path = dataset.file_path
+            source_dataset_type = "original"
+        else:
+            raise HTTPException(status_code=404, detail="Physical file missing")
+
+    try:
+        result = prepare_ml_dataset(
+            source_file_path=source_file_path,
+            upload_dir=settings.UPLOAD_DIR,
+            target_column=request.target_column,
+            test_size=request.test_size,
+            random_state=request.random_state,
+        )
+    except MLPreparationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        )
+    except (DataIngestionError, FileNotFoundError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ML preparation failed: {str(e)}")
+
+    ml_ready_record = MLReadyDataset(
+        dataset_id=dataset_id,
+        engineered_dataset_id=engineered_dataset_id_ref,
+        cleaned_dataset_id=cleaned_dataset_id_ref,
+        source_dataset_type=source_dataset_type,
+        source_file_path=result["source_file_path"],
+        ml_ready_file_path=result["ml_ready_file_path"],
+        target_column=result["target_column"],
+        rows_before=result["rows_before"],
+        rows_after=result["rows_after"],
+        train_rows=result["train_rows"],
+        test_rows=result["test_rows"],
+        original_feature_count=result["original_feature_count"],
+        processed_feature_count=result["processed_feature_count"],
+        numeric_columns=result["numeric_columns"],
+        categorical_columns=result["categorical_columns"],
+        feature_names=result["feature_names"],
+        test_size=result["test_size"],
+        random_state=result["random_state"],
+        preprocessing_operations=result["preprocessing_operations"],
+        status=result["status"],
+    )
+    db.add(ml_ready_record)
+    db.commit()
+    db.refresh(ml_ready_record)
+
+    return MLReadyDatasetResponse.model_validate(ml_ready_record)
+
+
+@router.get("/{dataset_id}/prepared", response_model=MLReadyDatasetListResponse)
+def get_prepared_datasets(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    prepared = (
+        db.query(MLReadyDataset)
+        .filter(MLReadyDataset.dataset_id == dataset_id)
+        .order_by(MLReadyDataset.created_at.desc())
+        .all()
+    )
+
+    return MLReadyDatasetListResponse(
+        prepared_datasets=[MLReadyDatasetResponse.model_validate(p) for p in prepared],
+        total=len(prepared),
+    )
+
+
+@router.get("/{dataset_id}/prepared/latest", response_model=MLReadyDatasetResponse)
+def get_latest_prepared_dataset(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    latest = (
+        db.query(MLReadyDataset)
+        .filter(MLReadyDataset.dataset_id == dataset_id)
+        .order_by(MLReadyDataset.created_at.desc())
+        .first()
+    )
+
+    if not latest:
+        raise HTTPException(status_code=404, detail="No ML-ready dataset preparation found")
+
+    return MLReadyDatasetResponse.model_validate(latest)
