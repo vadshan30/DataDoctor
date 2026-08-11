@@ -12,14 +12,20 @@ from app.models.user import User
 from app.models.dataset_profile import DatasetProfile
 from app.models.data_quality_report import DataQualityReport
 from app.models.cleaned_dataset import CleanedDataset
+from app.models.engineered_dataset import EngineeredDataset
 from app.schemas.dataset import DatasetListResponse, DatasetResponse, UploadResponse
 from app.schemas.profiling import DatasetProfileResponse
 from app.schemas.quality import DataQualityResponse
 from app.schemas.cleaning import CleaningResultResponse, CleaningResultListResponse
+from app.schemas.feature_engineering import (
+    EngineeringResultListResponse,
+    EngineeringResultResponse,
+)
 from app.services.data_engine.ingester import DataIngestionError, get_shape, read_file
 from app.services.data_engine.profiler import generate_profile
 from app.services.data_engine.quality import analyze_quality
 from app.services.data_engine.cleaner import clean_dataset
+from app.services.data_engine.feature_engineer import engineer_features
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
 
@@ -276,4 +282,91 @@ def get_cleaned_datasets(
     return CleaningResultListResponse(
         cleaned_datasets=[CleaningResultResponse.model_validate(c) for c in cleaned],
         total=len(cleaned),
+    )
+
+
+@router.post("/{dataset_id}/engineer_features", response_model=EngineeringResultResponse)
+def engineer_features_endpoint(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    # Prefer the latest cleaned dataset; fall back to the original file
+    cleaned = (
+        db.query(CleanedDataset)
+        .filter(CleanedDataset.dataset_id == dataset_id)
+        .order_by(CleanedDataset.created_at.desc())
+        .first()
+    )
+
+    if cleaned and os.path.exists(cleaned.cleaned_file_path):
+        source_file_path = cleaned.cleaned_file_path
+        cleaned_dataset_id = cleaned.id
+    elif os.path.exists(dataset.file_path):
+        source_file_path = dataset.file_path
+        cleaned_dataset_id = None
+    else:
+        raise HTTPException(status_code=404, detail="Physical file missing")
+
+    try:
+        result = engineer_features(source_file_path, settings.UPLOAD_DIR)
+    except (DataIngestionError, FileNotFoundError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail="Permission denied accessing file")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Feature engineering failed")
+
+    engineered_record = EngineeredDataset(
+        dataset_id=dataset_id,
+        cleaned_dataset_id=cleaned_dataset_id,
+        original_file_path=result["source_file_path"],
+        engineered_file_path=result["engineered_file_path"],
+        rows_before=result["rows_before"],
+        rows_after=result["rows_after"],
+        columns_before=result["columns_before"],
+        columns_after=result["columns_after"],
+        features_added=result["features_added"],
+        features_removed=result["features_removed"],
+        feature_names=result["new_feature_names"],
+        feature_engineering_operations=result["feature_engineering_operations"],
+        engineering_status=result["engineering_status"],
+    )
+    db.add(engineered_record)
+    db.commit()
+    db.refresh(engineered_record)
+
+    return EngineeringResultResponse.model_validate(engineered_record)
+
+
+@router.get("/{dataset_id}/engineered", response_model=EngineeringResultListResponse)
+def get_engineered_datasets(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    engineered = (
+        db.query(EngineeredDataset)
+        .filter(EngineeredDataset.dataset_id == dataset_id)
+        .order_by(EngineeredDataset.created_at.desc())
+        .all()
+    )
+
+    return EngineeringResultListResponse(
+        engineered_datasets=[EngineeringResultResponse.model_validate(e) for e in engineered],
+        total=len(engineered),
     )
