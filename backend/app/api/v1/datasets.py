@@ -11,12 +11,15 @@ from app.models.dataset import Dataset
 from app.models.user import User
 from app.models.dataset_profile import DatasetProfile
 from app.models.data_quality_report import DataQualityReport
+from app.models.cleaned_dataset import CleanedDataset
 from app.schemas.dataset import DatasetListResponse, DatasetResponse, UploadResponse
 from app.schemas.profiling import DatasetProfileResponse
 from app.schemas.quality import DataQualityResponse
+from app.schemas.cleaning import CleaningResultResponse, CleaningResultListResponse
 from app.services.data_engine.ingester import DataIngestionError, get_shape, read_file
 from app.services.data_engine.profiler import generate_profile
 from app.services.data_engine.quality import analyze_quality
+from app.services.data_engine.cleaner import clean_dataset
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
 
@@ -194,7 +197,7 @@ def get_dataset_quality(
         raise HTTPException(status_code=422, detail=str(e))
         
     quality_response = analyze_quality(df, dataset_id=dataset_id)
-    
+
     # Save the report
     new_report = DataQualityReport(
         dataset_id=dataset_id,
@@ -203,5 +206,74 @@ def get_dataset_quality(
     )
     db.add(new_report)
     db.commit()
-    
+
     return quality_response
+
+
+@router.post("/{dataset_id}/clean", response_model=CleaningResultResponse)
+def clean_dataset_endpoint(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    if not os.path.exists(dataset.file_path):
+        raise HTTPException(status_code=404, detail="Physical file missing")
+
+    try:
+        result = clean_dataset(dataset.file_path, settings.UPLOAD_DIR)
+    except (DataIngestionError, FileNotFoundError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cleaning failed: {str(e)}")
+
+    cleaned_record = CleanedDataset(
+        dataset_id=dataset_id,
+        original_file_path=result["original_file_path"],
+        cleaned_file_path=result["cleaned_file_path"],
+        rows_before=result["rows_before"],
+        rows_after=result["rows_after"],
+        columns_before=result["columns_before"],
+        columns_after=result["columns_after"],
+        missing_values_handled=result["missing_values_handled"],
+        duplicates_removed=result["duplicates_removed"],
+        cleaning_status=result["cleaning_status"],
+        cleaning_operations=result["cleaning_operations"],
+    )
+    db.add(cleaned_record)
+    db.commit()
+    db.refresh(cleaned_record)
+
+    return CleaningResultResponse.model_validate(cleaned_record)
+
+
+@router.get("/{dataset_id}/cleaned", response_model=CleaningResultListResponse)
+def get_cleaned_datasets(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
+    cleaned = (
+        db.query(CleanedDataset)
+        .filter(CleanedDataset.dataset_id == dataset_id)
+        .order_by(CleanedDataset.created_at.desc())
+        .all()
+    )
+
+    return CleaningResultListResponse(
+        cleaned_datasets=[CleaningResultResponse.model_validate(c) for c in cleaned],
+        total=len(cleaned),
+    )

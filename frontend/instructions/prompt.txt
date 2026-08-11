@@ -1,0 +1,107 @@
+## Phase 2.4 — Fix the Final Failing Test and Verify Completely
+
+We are currently implementing **DataDoctor Phase 2.4 — Automated Data Cleaning**.
+
+The implementation is already complete except for **one failing test**.
+
+### Current status
+
+* 61 tests passing
+* 1 test failing
+* Failure:
+  `test_clean_empty_string_handling`
+
+The failure occurs because Pandas `read_csv()` converts quoted empty strings (`""`) into `NaN` by default before the cleaning engine gets the data.
+
+### Your task
+
+Fix **only the test/data-generation issue first**. Do NOT rewrite the cleaning engine unnecessarily.
+
+The cleaning contract is:
+
+* `""` → missing
+* whitespace-only strings such as `"   "` → missing
+* numeric missing values → median imputation
+* categorical missing values → mode imputation
+* duplicate rows → remove
+* original dataset must never be modified
+
+### Required investigation
+
+1. Inspect:
+
+   * `backend/app/services/data_engine/cleaner.py`
+   * `backend/tests/test_cleaning.py`
+   * `backend/app/api/v1/datasets.py`
+   * `backend/app/models/cleaned_dataset.py`
+   * `backend/app/schemas/cleaning.py`
+
+2. Locate exactly why `test_clean_empty_string_handling` fails.
+
+3. Prefer fixing the **test fixture/input generation** rather than changing production behavior if the production cleaning logic is already correct.
+
+4. Ensure the test data preserves literal empty strings so the cleaner can actually detect them.
+
+A suitable test-side approach may be:
+
+```python
+pd.read_csv(
+    StringIO(csv_data),
+    keep_default_na=False,
+    dtype=str
+)
+```
+
+However, **do not blindly apply this**. Inspect the existing test structure and use the smallest correct fix.
+
+### Important
+
+Do NOT:
+
+* downgrade Pandas
+* change `xlrd`
+* remove the empty-string cleaning feature
+* weaken assertions
+* skip or xfail the test
+* modify unrelated Phase 2.1–2.3 functionality
+* rewrite working production code without evidence that it is actually wrong
+
+### Optional production robustness check
+
+After fixing the test, inspect whether the cleaner itself should normalize whitespace-only strings consistently across CSV/XLSX/XLS.
+
+If there is a genuine cross-format robustness issue, fix it carefully, but keep the change minimal and add a regression test.
+
+### Verification
+
+Run:
+
+```powershell
+cd backend
+python -m pytest tests -v
+```
+
+Do not claim Phase 2.4 is complete until the complete suite passes.
+
+Expected final result should be approximately:
+
+```text
+62 passed, 0 failed
+```
+
+Use the actual number reported by pytest rather than assuming it.
+
+### Final report
+
+After fixing and testing, report:
+
+1. Root cause
+2. Exact files changed
+3. Exact changes made
+4. Full pytest result
+5. Whether all previous Phase 2.1, 2.2, and 2.3 tests still pass
+6. Whether Phase 2.4 is now COMPLETE
+7. Any remaining warnings or limitations
+8. A recommended Git commit message
+
+Do not start Phase 2.5 or implement new features yet.
