@@ -32,8 +32,13 @@ from app.schemas.experiment import (
     ExperimentResponse,
     ExperimentListResponse,
 )
+from app.schemas.prediction import (
+    BatchPredictionRequest,
+    PredictionRequest,
+)
 from app.models.experiment import Experiment
 from app.models.model import TrainedModel
+from app.models.prediction import PredictionRecord
 from app.services.data_engine.ingester import DataIngestionError, get_shape, read_file
 from app.services.data_engine.profiler import generate_profile
 from app.services.data_engine.quality import analyze_quality
@@ -44,6 +49,19 @@ from app.services.data_engine.preprocessor import (
     prepare_ml_dataset,
 )
 from app.services.ml_engine.trainer import ExperimentError, run_experiment
+from app.services.ml_engine.evaluator import (
+    EvaluationError,
+    evaluate_experiment,
+    get_evaluation_summary,
+    get_model_comparison,
+    get_model_evaluation,
+)
+from app.services.ml_engine.predictor import (
+    PredictionError,
+    predict_batch,
+    predict_single,
+    save_prediction_record,
+)
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
 
@@ -461,6 +479,7 @@ def prepare_ml_dataset_endpoint(
         source_dataset_type=source_dataset_type,
         source_file_path=result["source_file_path"],
         ml_ready_file_path=result["ml_ready_file_path"],
+        preprocessor_path=result.get("preprocessor_path"),
         target_column=result["target_column"],
         rows_before=result["rows_before"],
         rows_after=result["rows_after"],
@@ -750,3 +769,334 @@ def _find_model_index(trained_models: list[TrainedModel], best_db_id: int | None
         if tm.id == best_db_id:
             return idx
     return None
+
+
+# ---------------------------------------------------------------------------
+# Shared ownership helpers for Phase 2.8 (evaluation & prediction)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_dataset_and_experiment(
+    db: Session,
+    dataset_id: int,
+    experiment_id: int,
+    current_user: User,
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this dataset",
+        )
+
+    experiment = (
+        db.query(Experiment)
+        .filter(
+            Experiment.id == experiment_id,
+            Experiment.dataset_id == dataset_id,
+        )
+        .first()
+    )
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    return dataset, experiment
+
+
+def _resolve_trained_model_by_index(
+    db: Session, experiment_id: int, model_index: int
+) -> tuple[TrainedModel, list[TrainedModel]]:
+    trained_models = (
+        db.query(TrainedModel)
+        .filter(TrainedModel.experiment_id == experiment_id)
+        .order_by(TrainedModel.id)
+        .all()
+    )
+    if model_index < 0 or model_index >= len(trained_models):
+        raise HTTPException(status_code=404, detail="Model not found")
+    return trained_models[model_index], trained_models
+
+
+# ---------------------------------------------------------------------------
+# Evaluation endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{dataset_id}/experiments/{experiment_id}/evaluate")
+def evaluate_experiment_endpoint(
+    dataset_id: int,
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    experiment = (
+        db.query(Experiment)
+        .filter(
+            Experiment.id == experiment_id,
+            Experiment.dataset_id == dataset_id,
+        )
+        .first()
+    )
+    # Re-fetch with ml_ready_dataset relationship loaded to avoid lazy-load
+    # surprises across commits.
+    db.refresh(experiment)
+
+    try:
+        result = evaluate_experiment(db, experiment, current_user.id)
+    except EvaluationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Evaluation failed: {str(e)}",
+        )
+
+    return result
+
+
+@router.get("/{dataset_id}/experiments/{experiment_id}/evaluation")
+def get_experiment_evaluation_endpoint(
+    dataset_id: int,
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    experiment = (
+        db.query(Experiment)
+        .filter(
+            Experiment.id == experiment_id,
+            Experiment.dataset_id == dataset_id,
+        )
+        .first()
+    )
+
+    try:
+        summary = get_evaluation_summary(db, experiment)
+    except EvaluationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        )
+
+    if not summary["evaluations"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No evaluation results found. Run POST .../evaluate first.",
+        )
+
+    return summary
+
+
+@router.get("/{dataset_id}/experiments/{experiment_id}/models/{model_id}/evaluation")
+def get_model_evaluation_endpoint(
+    dataset_id: int,
+    experiment_id: int,
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    experiment = (
+        db.query(Experiment)
+        .filter(
+            Experiment.id == experiment_id,
+            Experiment.dataset_id == dataset_id,
+        )
+        .first()
+    )
+
+    try:
+        result = get_model_evaluation(db, experiment, model_id)
+    except EvaluationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(e)
+        )
+
+    return result
+
+
+@router.get("/{dataset_id}/experiments/{experiment_id}/comparison")
+def get_model_comparison_endpoint(
+    dataset_id: int,
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    experiment = (
+        db.query(Experiment)
+        .filter(
+            Experiment.id == experiment_id,
+            Experiment.dataset_id == dataset_id,
+        )
+        .first()
+    )
+
+    try:
+        result = get_model_comparison(db, experiment)
+    except EvaluationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Prediction endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict")
+def predict_endpoint(
+    dataset_id: int,
+    experiment_id: int,
+    model_id: int,
+    request: PredictionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    tm, _ = _resolve_trained_model_by_index(db, experiment_id, model_id)
+
+    try:
+        result = predict_single(db, tm.id, request.features, model_index=model_id)
+    except PredictionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Prediction failed: {str(e)}",
+        )
+
+    save_prediction_record(
+        db,
+        experiment_id=experiment_id,
+        trained_model_id=tm.id,
+        input_data=request.features,
+        prediction={"prediction": result["prediction"]},
+        model_type=result.get("problem_type"),
+    )
+
+    return result
+
+
+@router.post(
+    "/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict/batch"
+)
+def predict_batch_endpoint(
+    dataset_id: int,
+    experiment_id: int,
+    model_id: int,
+    request: BatchPredictionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    tm, _ = _resolve_trained_model_by_index(db, experiment_id, model_id)
+
+    try:
+        result = predict_batch(db, tm.id, request.rows, model_index=model_id)
+    except PredictionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch prediction failed: {str(e)}",
+        )
+
+    return result
+
+
+@router.get(
+    "/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict"
+)
+def get_model_predictions(
+    dataset_id: int,
+    experiment_id: int,
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    tm, _ = _resolve_trained_model_by_index(db, experiment_id, model_id)
+
+    records = (
+        db.query(PredictionRecord)
+        .filter(PredictionRecord.experiment_id == experiment_id)
+        .filter(PredictionRecord.trained_model_id == tm.id)
+        .order_by(PredictionRecord.created_at.desc())
+        .all()
+    )
+
+    return {
+        "model_id": model_id,
+        "model_name": tm.name,
+        "algorithm": tm.algorithm,
+        "total_predictions": len(records),
+        "predictions": [
+            {
+                "id": r.id,
+                "trained_model_id": r.trained_model_id,
+                "input_data": r.input_data,
+                "prediction": r.prediction,
+                "model_type": r.model_type,
+                "created_at": r.created_at,
+            }
+            for r in records
+        ],
+    }
+
+
+@router.get(
+    "/{dataset_id}/experiments/{experiment_id}/predictions"
+)
+def get_experiment_predictions(
+    dataset_id: int,
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    experiment = (
+        db.query(Experiment)
+        .filter(
+            Experiment.id == experiment_id,
+            Experiment.dataset_id == dataset_id,
+        )
+        .first()
+    )
+
+    records = (
+        db.query(PredictionRecord)
+        .filter(PredictionRecord.experiment_id == experiment_id)
+        .order_by(PredictionRecord.created_at.desc())
+        .all()
+    )
+
+    return {
+        "experiment_id": experiment.id,
+        "experiment_name": experiment.name,
+        "total_predictions": len(records),
+        "predictions": [
+            {
+                "id": r.id,
+                "trained_model_id": r.trained_model_id,
+                "input_data": r.input_data,
+                "prediction": r.prediction,
+                "model_type": r.model_type,
+                "created_at": r.created_at,
+            }
+            for r in records
+        ],
+    }

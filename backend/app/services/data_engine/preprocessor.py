@@ -2,6 +2,7 @@ import os
 import uuid
 from typing import Any
 
+import joblib
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
@@ -33,6 +34,26 @@ def _save_ml_ready_file(df: pd.DataFrame, file_path: str) -> None:
         df.to_excel(file_path, index=False, engine="xlwt")
     else:
         df.to_csv(file_path, index=False)
+
+
+def _save_preprocessor(
+    preprocessor: Any, source_file_path: str, ml_ready_file_path: str
+) -> str:
+    """Persist the *fitted* preprocessing ColumnTransformer.
+
+    The filename is derived from the *source* file (not the ML-ready file) and
+    avoids the ``_ml_ready_`` marker so that it is not confused with the
+    ML-ready dataset artifact by existing file filters.  A unique suffix
+    guarantees multiple preparations never collide.
+    """
+    parent_dir = os.path.dirname(ml_ready_file_path)
+    os.makedirs(parent_dir, exist_ok=True)
+    src_base = os.path.basename(source_file_path)
+    src_name, _ = os.path.splitext(src_base)
+    pp_filename = f"{src_name}_preprocessor_{uuid.uuid4().hex}.joblib"
+    pp_path = os.path.join(parent_dir, pp_filename)
+    joblib.dump(preprocessor, pp_path)
+    return pp_path
 
 
 def _is_numeric_column(series: pd.Series) -> bool:
@@ -174,10 +195,23 @@ class MLPreparationService:
                 os.remove(ml_ready_file_path)
             raise MLPreparationError(f"Failed to save ML-ready file: {e}") from e
 
+        # --- Persist fitted preprocessor (reused verbatim at inference) -----
+        try:
+            preprocessor_path = _save_preprocessor(
+                self.preprocessor, self.source_file_path, ml_ready_file_path
+            )
+        except Exception as e:
+            if os.path.exists(ml_ready_file_path):
+                os.remove(ml_ready_file_path)
+            raise MLPreparationError(
+                f"Failed to save fitted preprocessor: {e}"
+            ) from e
+
         # --- Assemble metadata ---------------------------------------------
         return {
             "source_file_path": self.source_file_path,
             "ml_ready_file_path": ml_ready_file_path,
+            "preprocessor_path": preprocessor_path,
             "target_column": self.target_column,
             "rows_before": rows_before,
             "rows_after": rows_after,
