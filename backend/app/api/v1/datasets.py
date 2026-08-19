@@ -68,6 +68,7 @@ from app.services.ml_engine.predictor import (
     predict_single,
     save_prediction_record,
 )
+from app.services.ml_engine.explainer import get_feature_importance
 from app.services.reporting.report_generator import ReportGenerationError, ReportGenerator
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
@@ -1082,6 +1083,60 @@ def get_model_comparison_endpoint(
         )
 
     return result
+
+
+@router.get("/{dataset_id}/experiments/{experiment_id}/models/{model_id}/explainability")
+def get_model_explainability_endpoint(
+    dataset_id: int,
+    experiment_id: int,
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _resolve_dataset_and_experiment(db, dataset_id, experiment_id, current_user)
+    trained_model, _ = _resolve_trained_model_by_index(db, experiment_id, model_id)
+    ml_ready = trained_model.experiment.ml_ready_dataset
+
+    if not trained_model.model_path or not os.path.exists(trained_model.model_path):
+        return {
+            "model_name": trained_model.name,
+            "algorithm": trained_model.algorithm,
+            "model_type": "unknown",
+            "features": [],
+            "is_available": False,
+            "message": "Feature importance is unavailable because the model artifact is missing.",
+        }
+
+    try:
+        result = get_feature_importance(
+            trained_model.model_path,
+            trained_model.algorithm,
+            ml_ready.feature_names if ml_ready else None,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Explainability extraction failed: {exc}",
+        ) from exc
+
+    if result is None:
+        return {
+            "model_name": trained_model.name,
+            "algorithm": trained_model.algorithm,
+            "model_type": "unknown",
+            "features": [],
+            "is_available": False,
+            "message": f"Feature importance is not available for {trained_model.algorithm}.",
+        }
+
+    return {
+        "model_name": trained_model.name,
+        "algorithm": trained_model.algorithm,
+        "model_type": result.get("type", "unknown"),
+        "features": result.get("features", []),
+        "is_available": True,
+        "message": None,
+    }
 
 
 # ---------------------------------------------------------------------------
