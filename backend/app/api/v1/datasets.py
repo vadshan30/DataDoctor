@@ -36,9 +36,15 @@ from app.schemas.prediction import (
     BatchPredictionRequest,
     PredictionRequest,
 )
+from app.schemas.report import (
+    ReportGenerationRequest,
+    ReportListResponse,
+    ReportResponse,
+)
 from app.models.experiment import Experiment
 from app.models.model import TrainedModel
 from app.models.prediction import PredictionRecord
+from app.models.report import Report
 from app.services.data_engine.ingester import DataIngestionError, get_shape, read_file
 from app.services.data_engine.profiler import generate_profile
 from app.services.data_engine.quality import analyze_quality
@@ -62,10 +68,140 @@ from app.services.ml_engine.predictor import (
     predict_single,
     save_prediction_record,
 )
+from app.services.reporting.report_generator import ReportGenerationError, ReportGenerator
 from app.utils.helpers import ensure_directories, generate_unique_filename
 from app.utils.validators import is_allowed_file, is_within_size_limit
 
 router = APIRouter()
+
+
+def _get_owned_dataset(db: Session, dataset_id: int, current_user: User) -> Dataset:
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+    return dataset
+
+
+def _report_response(report: Report) -> ReportResponse:
+    return ReportResponse.model_validate(report)
+
+
+@router.post("/{dataset_id}/report", response_model=ReportResponse)
+def generate_dataset_report_endpoint(
+    dataset_id: int,
+    request: ReportGenerationRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = _get_owned_dataset(db, dataset_id, current_user)
+    cached_report = (
+        db.query(Report)
+        .filter(Report.dataset_id == dataset.id, Report.report_type == "dataset")
+        .order_by(Report.created_at.desc())
+        .first()
+    )
+    if cached_report and not (request and request.regenerate):
+        return _report_response(cached_report)
+    try:
+        report_data = ReportGenerator(db).generate_dataset_report(dataset.id)
+        report = Report(
+            name=f"{dataset.name} dataset report",
+            report_type="dataset",
+            dataset_id=dataset.id,
+            owner_id=current_user.id,
+            status="completed",
+            report_data=report_data.model_dump(mode="json"),
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        return _report_response(report)
+    except ReportGenerationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {exc}") from exc
+
+
+@router.get("/{dataset_id}/report", response_model=ReportResponse)
+def get_latest_dataset_report_endpoint(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _get_owned_dataset(db, dataset_id, current_user)
+    report = (
+        db.query(Report)
+        .filter(Report.dataset_id == dataset_id, Report.report_type == "dataset")
+        .order_by(Report.created_at.desc())
+        .first()
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="No dataset report found")
+    return _report_response(report)
+
+
+@router.get("/{dataset_id}/reports", response_model=ReportListResponse)
+def list_dataset_reports_endpoint(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _get_owned_dataset(db, dataset_id, current_user)
+    reports = (
+        db.query(Report)
+        .filter(Report.dataset_id == dataset_id)
+        .order_by(Report.created_at.desc())
+        .all()
+    )
+    return ReportListResponse(
+        reports=[_report_response(report) for report in reports], total=len(reports)
+    )
+
+
+@router.post(
+    "/{dataset_id}/experiments/{experiment_id}/report",
+    response_model=ReportResponse,
+)
+def generate_experiment_report_endpoint(
+    dataset_id: int,
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = _get_owned_dataset(db, dataset_id, current_user)
+    experiment = (
+        db.query(Experiment)
+        .filter(Experiment.id == experiment_id, Experiment.dataset_id == dataset_id)
+        .first()
+    )
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    try:
+        report_data = ReportGenerator(db).generate_experiment_report(dataset.id, experiment.id)
+        report = Report(
+            name=f"{dataset.name} - {experiment.name} report",
+            report_type="experiment",
+            dataset_id=dataset.id,
+            owner_id=current_user.id,
+            experiment_id=experiment.id,
+            trained_model_id=experiment.best_model_id,
+            status="completed",
+            report_data=report_data.model_dump(mode="json"),
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        return _report_response(report)
+    except ReportGenerationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {exc}") from exc
 
 
 @router.get("/health")
