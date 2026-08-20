@@ -202,3 +202,96 @@ export interface EngineeringResultListResponse {
   total: number;
 }
 
+// ---------------------------------------------------------------------------
+// ML Preparation types (mirror backend/app/schemas/ml_preparation.py)
+// ---------------------------------------------------------------------------
+
+export interface PrepareRequest {
+  target_column: string;
+  test_size?: number;
+  random_state?: number;
+}
+
+export interface MLReadyDatasetResponse {
+  ml_ready_dataset_id: number;
+  dataset_id: number;
+  source_dataset_type: string;
+  target_column: string;
+  rows_before: number;
+  rows_after: number;
+  train_rows: number;
+  test_rows: number;
+  original_feature_count: number;
+  processed_feature_count: number;
+  numeric_columns: string[];
+  categorical_columns: string[];
+  feature_names: string[];
+  test_size: number;
+  random_state: number;
+  preprocessing_operations: Record<string, unknown>[];
+  status: string;
+  created_at: string;
+}
+
+export interface MLReadyDatasetListResponse {
+  prepared_datasets: MLReadyDatasetResponse[];
+  total: number;
+}
+
+// ---------------------------------------------------------------------------
+// Experiment & Model Training types (mirror backend/app/schemas/experiment.py)
+// ---------------------------------------------------------------------------
+
+export interface ExperimentCreateRequest {
+  ml_ready_dataset_id: number;
+  experiment_name: string;
+  target_column: string;
+  problem_type: "classification" | "regression";
+}
+
+export interface ModelResultResponse {
+  model_id: number;
+  model_name: string;
+  algorithm: string;
+  model_type: string;
+  status: string;
+  metrics: Record<string, number> | null;
+  hyperparameters: Record<string, unknown> | null;
+  training_rows: number;
+  validation_rows: number;
+  feature_count: number;
+  created_at?: string;
+}
+
+export interface ExperimentResponse {
+  experiment_id: number;
+  dataset_id: number;
+  ml_ready_dataset_id: number | null;
+  name: string;
+  experiment_type: string;
+  problem_type: "classification" | "regression";
+  target_column: string | null;
+  test_size: number;
+  random_state: number;
+  status: string;
+  best_model_id: number | null;
+  best_metric: string | null;
+  best_score: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at?: string;
+  completed_at?: string | null;
+  models: ModelResultResponse[];
+  training_rows?: number;
+  validation_rows?: number;
+  feature_names?: string[];
+  feature_count?: number;
+  total_training_duration?: number;
+}
+
+export interface ExperimentListResponse {
+  experiments: ExperimentResponse[];
+  total: number;
+}
+
+

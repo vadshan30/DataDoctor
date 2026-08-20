@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, CheckCircle2, FileText, FlaskConical, Layers3, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, BarChart3, CheckCircle2, Cpu, FileText, FlaskConical, Layers3, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { getDataset } from "../api/datasets";
@@ -6,6 +6,8 @@ import { getDatasetProfile } from "../api/profiling";
 import { getDatasetQuality } from "../api/quality";
 import { cleanDataset, getCleanedDatasets } from "../api/cleaning";
 import { engineerFeatures, getEngineeredDatasets } from "../api/featureEngineering";
+import { getPreparedDatasets, prepareMLDataset } from "../api/mlPreparation";
+import { createExperiment, listExperiments } from "../api/experiments";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "../components/common/States";
 import { ColumnProfileTable } from "../components/profiling/ColumnProfileTable";
 import { QualityScoreCard } from "../components/quality/QualityScoreCard";
@@ -19,6 +21,14 @@ import { FeatureOperationSelector } from "../components/featureEngineering/Featu
 import { FeatureEngineeringSummary } from "../components/featureEngineering/FeatureEngineeringSummary";
 import { FeatureEngineeringOperationList } from "../components/featureEngineering/FeatureEngineeringOperationList";
 import { FeatureEngineeringHistory } from "../components/featureEngineering/FeatureEngineeringHistory";
+import { PreparationForm } from "../components/mlPreparation/PreparationForm";
+import { PreparationSummary } from "../components/mlPreparation/PreparationSummary";
+import { PreparationOperations } from "../components/mlPreparation/PreparationOperations";
+import { PreparationHistory } from "../components/mlPreparation/PreparationHistory";
+import { ExperimentForm } from "../components/experiments/ExperimentForm";
+import { ExperimentSummary } from "../components/experiments/ExperimentSummary";
+import { ModelComparison } from "../components/experiments/ModelComparison";
+import { ExperimentHistory } from "../components/experiments/ExperimentHistory";
 import { formatBytes, formatNumber } from "../utils/helpers";
 import type {
   CleaningResultResponse,
@@ -26,6 +36,10 @@ import type {
   DatasetProfileResponse,
   DataQualityResponse,
   EngineeringResultResponse,
+  ExperimentCreateRequest,
+  ExperimentResponse,
+  MLReadyDatasetResponse,
+  PrepareRequest,
 } from "../types/api";
 
 type AsyncState<T> = { status: "loading" } | { status: "error"; error: string } | { status: "success"; data: T };
@@ -39,7 +53,9 @@ export function DatasetDetails() {
   const [profile, setProfile] = useState<AsyncState<DatasetProfileResponse>>(initialLoading);
   const [quality, setQuality] = useState<AsyncState<DataQualityResponse>>(initialLoading);
 
-  const [activeTab, setActiveTab] = useState<"all" | "profile" | "quality" | "cleaning" | "engineering">("all");
+  const [activeTab, setActiveTab] = useState<
+    "all" | "profile" | "quality" | "cleaning" | "engineering" | "preparation" | "experiments"
+  >("all");
 
   // Data Cleaning state
   const [cleaningRun, setCleaningRun] = useState<CleaningResultResponse | null>(null);
@@ -52,6 +68,18 @@ export function DatasetDetails() {
   const [engineeringHistory, setEngineeringHistory] = useState<EngineeringResultResponse[]>([]);
   const [engineeringLoading, setEngineeringLoading] = useState(false);
   const [engineeringError, setEngineeringError] = useState("");
+
+  // ML Preparation state
+  const [preparedRun, setPreparedRun] = useState<MLReadyDatasetResponse | null>(null);
+  const [preparedHistory, setPreparedHistory] = useState<MLReadyDatasetResponse[]>([]);
+  const [prepLoading, setPrepLoading] = useState(false);
+  const [prepError, setPrepError] = useState("");
+
+  // Experiments / Model Training state
+  const [experimentRun, setExperimentRun] = useState<ExperimentResponse | null>(null);
+  const [experimentHistory, setExperimentHistory] = useState<ExperimentResponse[]>([]);
+  const [expLoading, setExpLoading] = useState(false);
+  const [expError, setExpError] = useState("");
 
   const loadDataset = () => {
     if (!datasetId) return;
@@ -81,9 +109,7 @@ export function DatasetDetails() {
           setCleaningRun(res.cleaned_datasets[0]);
         }
       })
-      .catch(() => {
-        // Silently handle list fetch fallback
-      });
+      .catch(() => {});
   };
 
   const loadEngineeringHistory = () => {
@@ -95,9 +121,31 @@ export function DatasetDetails() {
           setEngineeringRun(res.engineered_datasets[0]);
         }
       })
-      .catch(() => {
-        // Silently handle list fetch fallback
-      });
+      .catch(() => {});
+  };
+
+  const loadPreparedHistory = () => {
+    if (!datasetId) return;
+    void getPreparedDatasets(datasetId)
+      .then((res) => {
+        setPreparedHistory(res.prepared_datasets);
+        if (res.prepared_datasets.length > 0 && !preparedRun) {
+          setPreparedRun(res.prepared_datasets[0]);
+        }
+      })
+      .catch(() => {});
+  };
+
+  const loadExperimentHistory = () => {
+    if (!datasetId) return;
+    void listExperiments(datasetId)
+      .then((res) => {
+        setExperimentHistory(res.experiments);
+        if (res.experiments.length > 0 && !experimentRun) {
+          setExperimentRun(res.experiments[0]);
+        }
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -105,6 +153,8 @@ export function DatasetDetails() {
     loadAnalysis();
     loadCleaningHistory();
     loadEngineeringHistory();
+    loadPreparedHistory();
+    loadExperimentHistory();
   }, [datasetId]);
 
   const handleCleanDataset = () => {
@@ -139,6 +189,38 @@ export function DatasetDetails() {
       });
   };
 
+  const handlePrepareMLDataset = (req: PrepareRequest) => {
+    if (!datasetId || prepLoading) return;
+    setPrepLoading(true);
+    setPrepError("");
+    void prepareMLDataset(datasetId, req)
+      .then((result) => {
+        setPreparedRun(result);
+        setPreparedHistory((prev) => [result, ...prev]);
+        setPrepLoading(false);
+      })
+      .catch((err) => {
+        setPrepError(err instanceof Error ? err.message : "ML preparation failed.");
+        setPrepLoading(false);
+      });
+  };
+
+  const handleTrainExperiment = (req: ExperimentCreateRequest) => {
+    if (!datasetId || expLoading) return;
+    setExpLoading(true);
+    setExpError("");
+    void createExperiment(datasetId, req)
+      .then((result) => {
+        setExperimentRun(result);
+        setExperimentHistory((prev) => [result, ...prev]);
+        setExpLoading(false);
+      })
+      .catch((err) => {
+        setExpError(err instanceof Error ? err.message : "Experiment training failed.");
+        setExpLoading(false);
+      });
+  };
+
   if (datasetError) {
     return (
       <div className="page">
@@ -156,6 +238,8 @@ export function DatasetDetails() {
       </div>
     );
   }
+
+  const columnsList = profile.status === "success" ? profile.data.columns : [];
 
   return (
     <div className="page">
@@ -216,6 +300,22 @@ export function DatasetDetails() {
         >
           <Sparkles size={16} />
           Feature Engineering
+        </button>
+        <button
+          type="button"
+          className={`tab-button ${activeTab === "preparation" ? "active" : ""}`}
+          onClick={() => setActiveTab("preparation")}
+        >
+          <Layers3 size={16} />
+          ML Preparation
+        </button>
+        <button
+          type="button"
+          className={`tab-button ${activeTab === "experiments" ? "active" : ""}`}
+          onClick={() => setActiveTab("experiments")}
+        >
+          <FlaskConical size={16} />
+          Experiments
         </button>
       </div>
 
@@ -300,6 +400,61 @@ export function DatasetDetails() {
           )}
 
           <FeatureEngineeringHistory runs={engineeringHistory} />
+        </section>
+      )}
+
+      {activeTab === "preparation" && (
+        <section className="analysis-section">
+          <div className="section-toolbar">
+            <h2 className="subheading" style={{ margin: 0 }}><Layers3 size={20} /> ML Data Preparation Workspace</h2>
+          </div>
+
+          <PreparationForm
+            columns={columnsList}
+            onPrepare={handlePrepareMLDataset}
+            loading={prepLoading}
+            error={prepError}
+          />
+
+          {preparedRun && (
+            <div style={{ marginTop: 24 }}>
+              <PreparationSummary result={preparedRun} />
+              <h3 className="subheading" style={{ margin: "24px 0 12px" }}>
+                Preprocessing Operations ({preparedRun.preprocessing_operations.length})
+              </h3>
+              <PreparationOperations operations={preparedRun.preprocessing_operations} />
+            </div>
+          )}
+
+          <PreparationHistory runs={preparedHistory} />
+        </section>
+      )}
+
+      {activeTab === "experiments" && (
+        <section className="analysis-section">
+          <div className="section-toolbar">
+            <h2 className="subheading" style={{ margin: 0 }}><FlaskConical size={20} /> Model Training Experiments Workspace</h2>
+          </div>
+
+          <ExperimentForm
+            preparedRuns={preparedHistory}
+            onTrain={handleTrainExperiment}
+            loading={expLoading}
+            error={expError}
+          />
+
+          {experimentRun && (
+            <div style={{ marginTop: 24 }}>
+              <ExperimentSummary experiment={experimentRun} />
+              <ModelComparison
+                models={experimentRun.models}
+                bestModelId={experimentRun.best_model_id}
+                problemType={experimentRun.problem_type}
+              />
+            </div>
+          )}
+
+          <ExperimentHistory experiments={experimentHistory} />
         </section>
       )}
     </div>
