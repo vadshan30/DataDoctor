@@ -4,23 +4,29 @@ import { useEffect, useState } from "react";
 import { getDataset } from "../api/datasets";
 import { getDatasetProfile } from "../api/profiling";
 import { getDatasetQuality } from "../api/quality";
+import { cleanDataset, getCleanedDatasets } from "../api/cleaning";
+import { engineerFeatures, getEngineeredDatasets } from "../api/featureEngineering";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "../components/common/States";
 import { ColumnProfileTable } from "../components/profiling/ColumnProfileTable";
 import { QualityScoreCard } from "../components/quality/QualityScoreCard";
 import { QualityIssues } from "../components/quality/QualityIssues";
 import { QualityRecommendations } from "../components/quality/QualityRecommendations";
-import { formatBytes, formatNumber, formatPercentage } from "../utils/helpers";
-import type { Dataset, DatasetProfileResponse, DataQualityResponse } from "../types/api";
-
-const sections = [
-  { label: "Data profile", icon: BarChart3 },
-  { label: "Data quality", icon: ShieldCheck },
-  { label: "Cleaning", icon: CheckCircle2 },
-  { label: "Feature engineering", icon: Sparkles },
-  { label: "ML preparation", icon: Layers3 },
-  { label: "Experiments", icon: FlaskConical },
-  { label: "Reports", icon: FileText },
-];
+import { CleaningAction } from "../components/cleaning/CleaningAction";
+import { CleaningSummary } from "../components/cleaning/CleaningSummary";
+import { CleaningOperationList } from "../components/cleaning/CleaningOperationList";
+import { CleaningHistory } from "../components/cleaning/CleaningHistory";
+import { FeatureOperationSelector } from "../components/featureEngineering/FeatureOperationSelector";
+import { FeatureEngineeringSummary } from "../components/featureEngineering/FeatureEngineeringSummary";
+import { FeatureEngineeringOperationList } from "../components/featureEngineering/FeatureEngineeringOperationList";
+import { FeatureEngineeringHistory } from "../components/featureEngineering/FeatureEngineeringHistory";
+import { formatBytes, formatNumber } from "../utils/helpers";
+import type {
+  CleaningResultResponse,
+  Dataset,
+  DatasetProfileResponse,
+  DataQualityResponse,
+  EngineeringResultResponse,
+} from "../types/api";
 
 type AsyncState<T> = { status: "loading" } | { status: "error"; error: string } | { status: "success"; data: T };
 
@@ -32,7 +38,20 @@ export function DatasetDetails() {
   const [datasetError, setDatasetError] = useState("");
   const [profile, setProfile] = useState<AsyncState<DatasetProfileResponse>>(initialLoading);
   const [quality, setQuality] = useState<AsyncState<DataQualityResponse>>(initialLoading);
-  const [activeTab, setActiveTab] = useState<"profile" | "quality" | "all">("all");
+
+  const [activeTab, setActiveTab] = useState<"all" | "profile" | "quality" | "cleaning" | "engineering">("all");
+
+  // Data Cleaning state
+  const [cleaningRun, setCleaningRun] = useState<CleaningResultResponse | null>(null);
+  const [cleaningHistory, setCleaningHistory] = useState<CleaningResultResponse[]>([]);
+  const [cleaningLoading, setCleaningLoading] = useState(false);
+  const [cleaningError, setCleaningError] = useState("");
+
+  // Feature Engineering state
+  const [engineeringRun, setEngineeringRun] = useState<EngineeringResultResponse | null>(null);
+  const [engineeringHistory, setEngineeringHistory] = useState<EngineeringResultResponse[]>([]);
+  const [engineeringLoading, setEngineeringLoading] = useState(false);
+  const [engineeringError, setEngineeringError] = useState("");
 
   const loadDataset = () => {
     if (!datasetId) return;
@@ -53,10 +72,72 @@ export function DatasetDetails() {
       .catch((err) => setQuality({ status: "error", error: err instanceof Error ? err.message : "Unable to load quality report." }));
   };
 
+  const loadCleaningHistory = () => {
+    if (!datasetId) return;
+    void getCleanedDatasets(datasetId)
+      .then((res) => {
+        setCleaningHistory(res.cleaned_datasets);
+        if (res.cleaned_datasets.length > 0 && !cleaningRun) {
+          setCleaningRun(res.cleaned_datasets[0]);
+        }
+      })
+      .catch(() => {
+        // Silently handle list fetch fallback
+      });
+  };
+
+  const loadEngineeringHistory = () => {
+    if (!datasetId) return;
+    void getEngineeredDatasets(datasetId)
+      .then((res) => {
+        setEngineeringHistory(res.engineered_datasets);
+        if (res.engineered_datasets.length > 0 && !engineeringRun) {
+          setEngineeringRun(res.engineered_datasets[0]);
+        }
+      })
+      .catch(() => {
+        // Silently handle list fetch fallback
+      });
+  };
+
   useEffect(() => {
     loadDataset();
     loadAnalysis();
+    loadCleaningHistory();
+    loadEngineeringHistory();
   }, [datasetId]);
+
+  const handleCleanDataset = () => {
+    if (!datasetId || cleaningLoading) return;
+    setCleaningLoading(true);
+    setCleaningError("");
+    void cleanDataset(datasetId)
+      .then((result) => {
+        setCleaningRun(result);
+        setCleaningHistory((prev) => [result, ...prev]);
+        setCleaningLoading(false);
+      })
+      .catch((err) => {
+        setCleaningError(err instanceof Error ? err.message : "Cleaning failed.");
+        setCleaningLoading(false);
+      });
+  };
+
+  const handleEngineerFeatures = () => {
+    if (!datasetId || engineeringLoading) return;
+    setEngineeringLoading(true);
+    setEngineeringError("");
+    void engineerFeatures(datasetId)
+      .then((result) => {
+        setEngineeringRun(result);
+        setEngineeringHistory((prev) => [result, ...prev]);
+        setEngineeringLoading(false);
+      })
+      .catch((err) => {
+        setEngineeringError(err instanceof Error ? err.message : "Feature engineering failed.");
+        setEngineeringLoading(false);
+      });
+  };
 
   if (datasetError) {
     return (
@@ -120,6 +201,22 @@ export function DatasetDetails() {
           <ShieldCheck size={16} />
           Data Quality
         </button>
+        <button
+          type="button"
+          className={`tab-button ${activeTab === "cleaning" ? "active" : ""}`}
+          onClick={() => setActiveTab("cleaning")}
+        >
+          <CheckCircle2 size={16} />
+          Data Cleaning
+        </button>
+        <button
+          type="button"
+          className={`tab-button ${activeTab === "engineering" ? "active" : ""}`}
+          onClick={() => setActiveTab("engineering")}
+        >
+          <Sparkles size={16} />
+          Feature Engineering
+        </button>
       </div>
 
       {(activeTab === "all" || activeTab === "profile") && (
@@ -151,6 +248,58 @@ export function DatasetDetails() {
           {quality.status === "success" && (
             <QualityContent quality={quality.data} />
           )}
+        </section>
+      )}
+
+      {activeTab === "cleaning" && (
+        <section className="analysis-section">
+          <div className="section-toolbar">
+            <h2 className="subheading" style={{ margin: 0 }}><CheckCircle2 size={20} /> Data Cleaning Workspace</h2>
+          </div>
+
+          <CleaningAction
+            onClean={handleCleanDataset}
+            loading={cleaningLoading}
+            error={cleaningError}
+          />
+
+          {cleaningRun && (
+            <div style={{ marginTop: 24 }}>
+              <CleaningSummary result={cleaningRun} />
+              <h3 className="subheading" style={{ margin: "24px 0 12px" }}>
+                Cleaning Operations Performed ({cleaningRun.cleaning_operations.length})
+              </h3>
+              <CleaningOperationList operations={cleaningRun.cleaning_operations} />
+            </div>
+          )}
+
+          <CleaningHistory runs={cleaningHistory} />
+        </section>
+      )}
+
+      {activeTab === "engineering" && (
+        <section className="analysis-section">
+          <div className="section-toolbar">
+            <h2 className="subheading" style={{ margin: 0 }}><Sparkles size={20} /> Feature Engineering Workspace</h2>
+          </div>
+
+          <FeatureOperationSelector
+            onEngineer={handleEngineerFeatures}
+            loading={engineeringLoading}
+            error={engineeringError}
+          />
+
+          {engineeringRun && (
+            <div style={{ marginTop: 24 }}>
+              <FeatureEngineeringSummary result={engineeringRun} />
+              <h3 className="subheading" style={{ margin: "24px 0 12px" }}>
+                Engineering Operations Performed ({engineeringRun.feature_engineering_operations.length})
+              </h3>
+              <FeatureEngineeringOperationList operations={engineeringRun.feature_engineering_operations} />
+            </div>
+          )}
+
+          <FeatureEngineeringHistory runs={engineeringHistory} />
         </section>
       )}
     </div>
@@ -213,7 +362,6 @@ function ProfileContent({ profile }: { profile: DatasetProfileResponse }) {
 
 function QualityContent({ quality }: { quality: DataQualityResponse }) {
   const hasIssues = quality.issues.length > 0;
-  const hasRecs = quality.recommendations.length > 0;
 
   return (
     <>
@@ -234,3 +382,4 @@ function QualityContent({ quality }: { quality: DataQualityResponse }) {
     </>
   );
 }
+

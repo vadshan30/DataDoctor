@@ -134,3 +134,71 @@ export interface DataQualityResponse {
   issues: QualityIssue[];
   recommendations: QualityRecommendation[];
 }
+
+// ---------------------------------------------------------------------------
+// Data cleaning types (mirror backend/app/schemas/cleaning.py)
+// ---------------------------------------------------------------------------
+
+export interface CleaningOperation {
+  operation: string;
+  column: string | null;
+  affected_rows: number;
+  strategy: string | null;
+  replacement_value?: unknown;
+  detail: string | null;
+}
+
+export interface CleaningResultResponse {
+  cleaned_dataset_id: number;
+  dataset_id: number;
+  cleaning_status: string;
+  rows_before: number;
+  rows_after: number;
+  columns_before: number;
+  columns_after: number;
+  missing_values_handled: number;
+  duplicates_removed: number;
+  cleaning_operations: CleaningOperation[];
+  created_at: string;
+}
+
+export interface CleaningResultListResponse {
+  cleaned_datasets: CleaningResultResponse[];
+  total: number;
+}
+
+// ---------------------------------------------------------------------------
+// Feature engineering types (mirror backend/app/schemas/feature_engineering.py)
+// ---------------------------------------------------------------------------
+
+export interface FeatureEngineeringOperation {
+  operation: string;
+  column: string | null;
+  new_features: string[] | null;
+  strategy: string | null;
+  affected_rows: number | null;
+  replacement_value?: unknown;
+  detail: string | null;
+}
+
+export interface EngineeringResultResponse {
+  engineered_dataset_id: number;
+  dataset_id: number;
+  cleaned_dataset_id: number | null;
+  engineering_status: string;
+  rows_before: number;
+  rows_after: number;
+  columns_before: number;
+  columns_after: number;
+  features_added: number;
+  features_removed: number;
+  new_feature_names: string[];
+  feature_engineering_operations: FeatureEngineeringOperation[];
+  created_at: string;
+}
+
+export interface EngineeringResultListResponse {
+  engineered_datasets: EngineeringResultResponse[];
+  total: number;
+}
+
