@@ -294,4 +294,131 @@ export interface ExperimentListResponse {
   total: number;
 }
 
+// ---------------------------------------------------------------------------
+// Evaluation types (mirror backend/app/schemas/evaluation.py)
+// ---------------------------------------------------------------------------
+
+export type ApiValue = string | number | boolean | null | ApiValue[] | { [key: string]: ApiValue };
+
+export interface EvaluationMetric {
+  name: string;
+  value: number;
+  higher_is_better?: boolean;
+}
+
+export interface ModelEvaluationResponse {
+  evaluation_id: number;
+  experiment_id: number;
+  trained_model_id: number;
+  model_name: string;
+  algorithm: string;
+  model_type: string;
+  metrics: Record<string, ApiValue> | null;
+  primary_metric: string | null;
+  primary_metric_value: number | null;
+  averaging_strategy: string | null;
+  evaluation_status: string;
+  error_message: string | null;
+  is_best: boolean;
+  created_at: string;
+}
+
+export interface RankedModelResponse {
+  rank: number;
+  trained_model_id: number;
+  model_id: number;
+  model_name: string;
+  algorithm: string;
+  model_type: string;
+  status: string;
+  metrics: Record<string, ApiValue> | null;
+  primary_metric: string | null;
+  primary_metric_value: number | null;
+  is_best: boolean;
+}
+
+export interface ModelComparisonResponse {
+  experiment_id: number;
+  experiment_name: string;
+  problem_type: string;
+  primary_metric: string;
+  secondary_metric: string | null;
+  averaging_strategy: string | null;
+  evaluation_timestamp?: string;
+  ranked_models: RankedModelResponse[];
+}
+
+export interface EvaluationSummaryResponse {
+  experiment_id: number;
+  experiment_name: string;
+  problem_type: string;
+  status: string;
+  primary_metric: string | null;
+  averaging_strategy: string | null;
+  best_model_id: number | null;
+  best_model_name: string | null;
+  best_score: number | null;
+  evaluations: ModelEvaluationResponse[];
+}
+
+// ---------------------------------------------------------------------------
+// Prediction types (mirror backend/app/schemas/prediction.py)
+// ---------------------------------------------------------------------------
+
+export interface PredictionRequest {
+  features: Record<string, ApiValue>;
+}
+
+export interface BatchPredictionRequest {
+  rows: Record<string, ApiValue>[];
+}
+
+export interface FeatureValidationError {
+  missing_features: string[];
+  unexpected_features: string[];
+}
+
+export interface PredictionResult {
+  model_id: number;
+  model_name: string;
+  algorithm: string;
+  model_type: string;
+  problem_type: string;
+  prediction: ApiValue;
+  input_data: Record<string, ApiValue> | null;
+  created_at: string;
+}
+
+export interface BatchPredictionResult {
+  model_id: number;
+  model_name: string;
+  algorithm: string;
+  model_type: string;
+  problem_type: string;
+  predictions: ApiValue[];
+  input_data: Record<string, ApiValue>[] | null;
+  created_at: string;
+}
+
+export interface PredictionRecordResponse {
+  id: number;
+  experiment_id: number;
+  trained_model_id: number | null;
+  model_type: string | null;
+  input_data: Record<string, ApiValue> | null;
+  prediction: Record<string, ApiValue> | null;
+  created_at: string;
+}
+
+export interface PredictionRecordListResponse {
+  predictions: PredictionRecordResponse[];
+  total?: number;
+  total_predictions: number;
+}
+
+// Error response types
+export interface ErrorResponse {
+  detail: string;
+}
+
 

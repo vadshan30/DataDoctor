@@ -8,6 +8,8 @@ import { cleanDataset, getCleanedDatasets } from "../api/cleaning";
 import { engineerFeatures, getEngineeredDatasets } from "../api/featureEngineering";
 import { getPreparedDatasets, prepareMLDataset } from "../api/mlPreparation";
 import { createExperiment, listExperiments } from "../api/experiments";
+import { evaluateExperiment, getEvaluationSummary, getModelEvaluation, getModelComparison } from "../api/evaluation";
+import { predictSingle, predictBatch, getModelPredictions, getExperimentPredictions } from "../api/prediction";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "../components/common/States";
 import { ColumnProfileTable } from "../components/profiling/ColumnProfileTable";
 import { QualityScoreCard } from "../components/quality/QualityScoreCard";
@@ -29,6 +31,14 @@ import { ExperimentForm } from "../components/experiments/ExperimentForm";
 import { ExperimentSummary } from "../components/experiments/ExperimentSummary";
 import { ModelComparison } from "../components/experiments/ModelComparison";
 import { ExperimentHistory } from "../components/experiments/ExperimentHistory";
+import { EvaluationAction } from "../components/evaluation/EvaluationAction";
+import { EvaluationSummary } from "../components/evaluation/EvaluationSummary";
+import { ModelEvaluationCard } from "../components/evaluation/ModelEvaluationCard";
+import { ModelRanking } from "../components/evaluation/ModelRanking";
+import { PredictionPanel } from "../components/prediction/PredictionPanel";
+import { PredictionResult } from "../components/prediction/PredictionResult";
+import { BatchPredictionPanel } from "../components/prediction/BatchPredictionPanel";
+import { PredictionHistory } from "../components/prediction/PredictionHistory";
 import { formatBytes, formatNumber } from "../utils/helpers";
 import type {
   CleaningResultResponse,
@@ -40,6 +50,9 @@ import type {
   ExperimentResponse,
   MLReadyDatasetResponse,
   PrepareRequest,
+  EvaluationSummaryResponse,
+  ModelComparisonResponse,
+  ModelEvaluationResponse,
 } from "../types/api";
 
 type AsyncState<T> = { status: "loading" } | { status: "error"; error: string } | { status: "success"; data: T };
@@ -54,7 +67,7 @@ export function DatasetDetails() {
   const [quality, setQuality] = useState<AsyncState<DataQualityResponse>>(initialLoading);
 
   const [activeTab, setActiveTab] = useState<
-    "all" | "profile" | "quality" | "cleaning" | "engineering" | "preparation" | "experiments"
+    "all" | "profile" | "quality" | "cleaning" | "engineering" | "preparation" | "experiments" | "evaluation"
   >("all");
 
   // Data Cleaning state
@@ -80,6 +93,11 @@ export function DatasetDetails() {
   const [experimentHistory, setExperimentHistory] = useState<ExperimentResponse[]>([]);
   const [expLoading, setExpLoading] = useState(false);
   const [expError, setExpError] = useState("");
+  const [evaluationSummary, setEvaluationSummary] = useState<EvaluationSummaryResponse | null>(null);
+  const [modelComparison, setModelComparison] = useState<ModelComparisonResponse | null>(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
 
   const loadDataset = () => {
     if (!datasetId) return;
@@ -146,6 +164,27 @@ export function DatasetDetails() {
         }
       })
       .catch(() => {});
+  };
+
+  const loadEvaluationData = (experiment: ExperimentResponse) => {
+    if (!datasetId) return;
+    setEvaluationLoading(true);
+    setEvaluationError("");
+    void Promise.all([
+      getEvaluationSummary(datasetId, experiment.experiment_id),
+      getModelComparison(datasetId, experiment.experiment_id),
+    ])
+      .then(([summary, comparison]) => {
+        setEvaluationSummary(summary);
+        setModelComparison(comparison);
+        setSelectedModelId(comparison.ranked_models[0]?.model_id ?? null);
+      })
+      .catch((err) => {
+        setEvaluationSummary(null);
+        setModelComparison(null);
+        setEvaluationError(err instanceof Error ? err.message : "Evaluation results are not available yet.");
+      })
+      .finally(() => setEvaluationLoading(false));
   };
 
   useEffect(() => {
@@ -317,6 +356,14 @@ export function DatasetDetails() {
           <FlaskConical size={16} />
           Experiments
         </button>
+        <button
+          type="button"
+          className={`tab-button ${activeTab === "evaluation" ? "active" : ""}`}
+          onClick={() => setActiveTab("evaluation")}
+        >
+          <Cpu size={16} />
+          Evaluation & Prediction
+        </button>
       </div>
 
       {(activeTab === "all" || activeTab === "profile") && (
@@ -455,6 +502,111 @@ export function DatasetDetails() {
           )}
 
           <ExperimentHistory experiments={experimentHistory} />
+        </section>
+      )}
+
+      {activeTab === "evaluation" && (
+        <section className="analysis-section">
+          <div className="section-toolbar">
+            <h2 className="subheading" style={{ margin: 0 }}><Cpu size={20} /> Evaluation & Prediction Workspace</h2>
+          </div>
+
+          <div className="workspace-description">
+            <p>Evaluate trained models, compare performance, and make predictions.</p>
+          </div>
+
+          {experimentHistory.length > 0 ? (
+            <div className="experiment-selector">
+              <h3>Select Experiment</h3>
+              <select
+                onChange={(e) => {
+                  const selectedExperimentId = e.target.value;
+                  const selected = experimentHistory.find(exp => exp.experiment_id.toString() === selectedExperimentId);
+                  if (selected) {
+                    setExperimentRun(selected);
+                    setSelectedModelId(selected.models.find((model) => model.status === "trained")?.model_id ?? null);
+                    loadEvaluationData(selected);
+                  }
+                }}
+                className="experiment-select"
+              >
+                <option value="">Select an experiment...</option>
+                {experimentHistory.map(exp => (
+                  <option key={exp.experiment_id} value={exp.experiment_id.toString()}>
+                    {exp.name} ({exp.problem_type})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <EmptyState
+              title="No Experiments Available"
+              body="Create an experiment first to access evaluation and prediction features."
+            />
+          )}
+
+          {experimentRun && datasetId && (
+            <div style={{ marginTop: 24 }}>
+              <EvaluationAction
+                datasetId={datasetId}
+                experimentId={experimentRun.experiment_id}
+                onEvaluationComplete={() => {
+                  loadEvaluationData(experimentRun);
+                }}
+                disabled={expLoading}
+              />
+
+              {evaluationLoading && <LoadingSpinner />}
+              {evaluationError && <ErrorMessage message={evaluationError} />}
+
+              {selectedModelId !== null && (
+                <PredictionPanel
+                  datasetId={datasetId}
+                  experimentId={experimentRun.experiment_id}
+                  modelId={selectedModelId}
+                />
+              )}
+
+              {selectedModelId !== null && (
+                <BatchPredictionPanel
+                  datasetId={datasetId}
+                  experimentId={experimentRun.experiment_id}
+                  modelId={selectedModelId}
+                />
+              )}
+
+              {evaluationSummary && modelComparison && <div style={{ marginTop: 32 }}>
+                <h3>Evaluation Results</h3>
+                <EvaluationSummary summary={evaluationSummary} />
+
+                <h3>Model Rankings</h3>
+                <ModelRanking
+                  comparison={modelComparison}
+                  onModelSelect={setSelectedModelId}
+                />
+
+                <div style={{ marginTop: 32 }}>
+                <h3>Model Evaluations</h3>
+                <div className="model-evaluations-grid">
+                  {evaluationSummary.evaluations.map((evaluation) => (
+                    <ModelEvaluationCard
+                      key={evaluation.evaluation_id}
+                      evaluation={evaluation}
+                    />
+                  ))}
+                </div>
+                </div>
+              </div>}
+
+              <div style={{ marginTop: 32 }}>
+                <h3>Prediction History</h3>
+                <PredictionHistory
+                  datasetId={datasetId}
+                  experimentId={experimentRun.experiment_id}
+                />
+              </div>
+            </div>
+          )}
         </section>
       )}
     </div>
