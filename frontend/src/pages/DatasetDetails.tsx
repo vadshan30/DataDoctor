@@ -1,4 +1,14 @@
-import { ArrowLeft, BarChart3, CheckCircle2, Cpu, FileText, FlaskConical, Layers3, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  BarChart3,
+  CheckCircle2,
+  Cpu,
+  FlaskConical,
+  Layers3,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { getDataset } from "../api/datasets";
@@ -8,9 +18,21 @@ import { cleanDataset, getCleanedDatasets } from "../api/cleaning";
 import { engineerFeatures, getEngineeredDatasets } from "../api/featureEngineering";
 import { getPreparedDatasets, prepareMLDataset } from "../api/mlPreparation";
 import { createExperiment, listExperiments } from "../api/experiments";
-import { evaluateExperiment, getEvaluationSummary, getModelEvaluation, getModelComparison } from "../api/evaluation";
-import { predictSingle, predictBatch, getModelPredictions, getExperimentPredictions } from "../api/prediction";
+import {
+  evaluateExperiment,
+  getEvaluationSummary,
+  getModelEvaluation,
+  getModelComparison,
+} from "../api/evaluation";
+import {
+  predictSingle,
+  predictBatch,
+  getModelPredictions,
+  getExperimentPredictions,
+} from "../api/prediction";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "../components/common/States";
+import { DatasetOverview } from "../components/DatasetOverview";
+import { DatasetStats } from "../components/DatasetStats";
 import { ColumnProfileTable } from "../components/profiling/ColumnProfileTable";
 import { QualityScoreCard } from "../components/quality/QualityScoreCard";
 import { QualityIssues } from "../components/quality/QualityIssues";
@@ -40,7 +62,6 @@ import { PredictionResult } from "../components/prediction/PredictionResult";
 import { BatchPredictionPanel } from "../components/prediction/BatchPredictionPanel";
 import { PredictionHistory } from "../components/prediction/PredictionHistory";
 import { ReportGenerationPanel } from "../components/reports/ReportGenerationPanel";
-import { formatBytes, formatNumber } from "../utils/helpers";
 import type {
   CleaningResultResponse,
   Dataset,
@@ -56,9 +77,39 @@ import type {
   ModelEvaluationResponse,
 } from "../types/api";
 
-type AsyncState<T> = { status: "loading" } | { status: "error"; error: string } | { status: "success"; data: T };
+type AsyncState<T> =
+  | { status: "loading" }
+  | { status: "error"; error: string }
+  | { status: "success"; data: T };
 
 const initialLoading = { status: "loading" as const };
+
+type TabKey =
+  | "all"
+  | "profile"
+  | "quality"
+  | "cleaning"
+  | "engineering"
+  | "preparation"
+  | "experiments"
+  | "evaluation";
+
+interface TabDef {
+  key: TabKey;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const TABS: TabDef[] = [
+  { key: "all", label: "Overview", icon: <BarChart3 size={16} /> },
+  { key: "profile", label: "Profile", icon: <BarChart3 size={16} /> },
+  { key: "quality", label: "Quality", icon: <ShieldCheck size={16} /> },
+  { key: "cleaning", label: "Clean", icon: <CheckCircle2 size={16} /> },
+  { key: "engineering", label: "Features", icon: <Sparkles size={16} /> },
+  { key: "preparation", label: "ML Prepare", icon: <Layers3 size={16} /> },
+  { key: "experiments", label: "Experiments", icon: <FlaskConical size={16} /> },
+  { key: "evaluation", label: "Evaluation & Predict", icon: <Cpu size={16} /> },
+];
 
 export function DatasetDetails() {
   const { datasetId } = useParams();
@@ -67,9 +118,7 @@ export function DatasetDetails() {
   const [profile, setProfile] = useState<AsyncState<DatasetProfileResponse>>(initialLoading);
   const [quality, setQuality] = useState<AsyncState<DataQualityResponse>>(initialLoading);
 
-  const [activeTab, setActiveTab] = useState<
-    "all" | "profile" | "quality" | "cleaning" | "engineering" | "preparation" | "experiments" | "evaluation"
-  >("all");
+  const [activeTab, setActiveTab] = useState<TabKey>("all");
 
   // Data Cleaning state
   const [cleaningRun, setCleaningRun] = useState<CleaningResultResponse | null>(null);
@@ -113,10 +162,17 @@ export function DatasetDetails() {
     setQuality({ status: "loading" });
     void getDatasetProfile(datasetId)
       .then((data) => setProfile({ status: "success", data }))
-      .catch((err) => setProfile({ status: "error", error: err instanceof Error ? err.message : "Unable to load profile." }));
+      .catch((err) =>
+        setProfile({ status: "error", error: err instanceof Error ? err.message : "Unable to load profile." }),
+      );
     void getDatasetQuality(datasetId)
       .then((data) => setQuality({ status: "success", data }))
-      .catch((err) => setQuality({ status: "error", error: err instanceof Error ? err.message : "Unable to load quality report." }));
+      .catch((err) =>
+        setQuality({
+          status: "error",
+          error: err instanceof Error ? err.message : "Unable to load quality report.",
+        }),
+      );
   };
 
   const loadCleaningHistory = () => {
@@ -195,6 +251,7 @@ export function DatasetDetails() {
     loadEngineeringHistory();
     loadPreparedHistory();
     loadExperimentHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetId]);
 
   const handleCleanDataset = () => {
@@ -205,7 +262,7 @@ export function DatasetDetails() {
       .then((result) => {
         setCleaningRun(result);
         setCleaningHistory((prev) => [result, ...prev]);
-        setCleaningLoading(false);
+        setCleaningLoading(false)
       })
       .catch((err) => {
         setCleaningError(err instanceof Error ? err.message : "Cleaning failed.");
@@ -264,8 +321,23 @@ export function DatasetDetails() {
   if (datasetError) {
     return (
       <div className="page">
-        <Link className="back-link" to="/datasets"><ArrowLeft size={15} />Back to datasets</Link>
-        <ErrorMessage message={datasetError} />
+        <div className="back-link-row">
+          <Link className="back-link" to="/datasets">
+            <ArrowLeft size={15} />Back to datasets
+          </Link>
+        </div>
+        <section className="analysis-section">
+          <h2 className="subheading" style={{ margin: 0 }}>Couldn't load this dataset</h2>
+          <p className="muted" style={{ marginTop: 12 }}>{datasetError}</p>
+          <div style={{ marginTop: 18, display: "flex", gap: 12 }}>
+            <button type="button" className="button primary" onClick={() => { setDatasetError(""); loadDataset(); }}>
+              <RefreshCw size={15} />Retry
+            </button>
+            <Link className="button" to="/datasets" style={{ background: "#fff", color: "var(--ink)", border: "1px solid var(--line)" }}>
+              Back to datasets
+            </Link>
+          </div>
+        </section>
       </div>
     );
   }
@@ -273,7 +345,11 @@ export function DatasetDetails() {
   if (!dataset) {
     return (
       <div className="page">
-        <Link className="back-link" to="/datasets"><ArrowLeft size={15} />Back to datasets</Link>
+        <div className="back-link-row">
+          <Link className="back-link" to="/datasets">
+            <ArrowLeft size={15} />Back to datasets
+          </Link>
+        </div>
         <LoadingSpinner />
       </div>
     );
@@ -283,94 +359,60 @@ export function DatasetDetails() {
 
   return (
     <div className="page">
-      <Link className="back-link" to="/datasets"><ArrowLeft size={15} />Back to datasets</Link>
-
-      <div className="detail-heading">
-        <div>
-          <p className="eyebrow">Dataset #{dataset.dataset_id}</p>
-          <h1>{dataset.name}</h1>
-          <p className="muted">{dataset.description || "No description provided."}</p>
-        </div>
-        <span className="status-pill large">{dataset.status}</span>
+      <div className="back-link-row">
+        <Link className="back-link" to="/datasets">
+          <ArrowLeft size={15} />Back to datasets
+        </Link>
       </div>
 
-      <div className="detail-stats">
-        <div><span>Rows</span><strong>{dataset.row_count.toLocaleString()}</strong></div>
-        <div><span>Columns</span><strong>{dataset.column_count}</strong></div>
-        <div><span>Format</span><strong>{dataset.file_type.toUpperCase()}</strong></div>
-        <div><span>Version</span><strong>v{dataset.version}</strong></div>
+      <DatasetOverview
+        dataset={dataset}
+        profile={profile}
+        onRefresh={() => void loadAnalysis()}
+        toolbarAction={
+          activeTab === "all" || activeTab === "profile" ? (
+            <button
+              type="button"
+              className="button"
+              onClick={() => setActiveTab("quality")}
+              style={{
+                background: "#fff",
+                color: "var(--teal)",
+                border: "1px solid var(--teal)",
+                minHeight: 32,
+                padding: "6px 12px",
+                fontSize: 13,
+              }}
+            >
+              Continue to Quality →
+            </button>
+          ) : null
+        }
+      />
+
+      <div className="workspace-tabs" role="tablist">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.key}
+            className={`tab-button ${activeTab === tab.key ? "active" : ""}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      <div className="workspace-tabs">
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "all" ? "active" : ""}`}
-          onClick={() => setActiveTab("all")}
-        >
-          Overview & Analysis
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "profile" ? "active" : ""}`}
-          onClick={() => setActiveTab("profile")}
-        >
-          <BarChart3 size={16} />
-          Data Profile
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "quality" ? "active" : ""}`}
-          onClick={() => setActiveTab("quality")}
-        >
-          <ShieldCheck size={16} />
-          Data Quality
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "cleaning" ? "active" : ""}`}
-          onClick={() => setActiveTab("cleaning")}
-        >
-          <CheckCircle2 size={16} />
-          Data Cleaning
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "engineering" ? "active" : ""}`}
-          onClick={() => setActiveTab("engineering")}
-        >
-          <Sparkles size={16} />
-          Feature Engineering
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "preparation" ? "active" : ""}`}
-          onClick={() => setActiveTab("preparation")}
-        >
-          <Layers3 size={16} />
-          ML Preparation
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "experiments" ? "active" : ""}`}
-          onClick={() => setActiveTab("experiments")}
-        >
-          <FlaskConical size={16} />
-          Experiments
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "evaluation" ? "active" : ""}`}
-          onClick={() => setActiveTab("evaluation")}
-        >
-          <Cpu size={16} />
-          Evaluation & Prediction
-        </button>
-      </div>
-
-      {(activeTab === "all" || activeTab === "profile") && (
+      {/* ------- Profile (also shown in Overview) ------- */}
+      {activeTab === "profile" && (
         <section className="analysis-section">
           <div className="section-toolbar">
-            <h2 className="subheading" style={{ margin: 0 }}><BarChart3 size={20} /> Data profile</h2>
+            <h2 className="subheading" style={{ margin: 0 }}>
+              <BarChart3 size={20} /> Data profile
+            </h2>
             <button type="button" className="text-button" onClick={() => void loadAnalysis()}>
               <RefreshCw size={15} />Refresh
             </button>
@@ -378,52 +420,48 @@ export function DatasetDetails() {
           {profile.status === "loading" && <LoadingSpinner />}
           {profile.status === "error" && <ErrorMessage message={profile.error} />}
           {profile.status === "success" && (
-            <>
-              <ProfileContent profile={profile.data} />
-              <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
-                <button type="button" className="button primary" onClick={() => setActiveTab("quality")}>
-                  Continue to Data Quality &rarr;
-                </button>
-              </div>
-            </>
+            <DatasetProfileContent profile={profile.data} />
           )}
+          <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" className="button primary" onClick={() => setActiveTab("quality")}>
+              Continue to Data Quality →
+            </button>
+          </div>
         </section>
       )}
 
-      {(activeTab === "all" || activeTab === "quality") && (
+      {/* ------- Quality (also shown in Overview) ------- */}
+      {activeTab === "quality" && (
         <section className="analysis-section">
           <div className="section-toolbar">
-            <h2 className="subheading" style={{ margin: 0 }}><ShieldCheck size={20} /> Data quality</h2>
+            <h2 className="subheading" style={{ margin: 0 }}>
+              <ShieldCheck size={20} /> Data quality
+            </h2>
             <button type="button" className="text-button" onClick={() => void loadAnalysis()}>
               <RefreshCw size={15} />Refresh
             </button>
           </div>
           {quality.status === "loading" && <LoadingSpinner />}
           {quality.status === "error" && <ErrorMessage message={quality.error} />}
-          {quality.status === "success" && (
-            <>
-              <QualityContent quality={quality.data} />
-              <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
-                <button type="button" className="button primary" onClick={() => setActiveTab("cleaning")}>
-                  Continue to Data Cleaning &rarr;
-                </button>
-              </div>
-            </>
-          )}
+          {quality.status === "success" && <QualityContent quality={quality.data} />}
+          <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" className="button primary" onClick={() => setActiveTab("cleaning")}>
+              Continue to Data Cleaning →
+            </button>
+          </div>
         </section>
       )}
 
+      {/* ------- Cleaning ------- */}
       {activeTab === "cleaning" && (
         <section className="analysis-section">
           <div className="section-toolbar">
-            <h2 className="subheading" style={{ margin: 0 }}><CheckCircle2 size={20} /> Data Cleaning Workspace</h2>
+            <h2 className="subheading" style={{ margin: 0 }}>
+              <CheckCircle2 size={20} /> Data Cleaning Workspace
+            </h2>
           </div>
 
-          <CleaningAction
-            onClean={handleCleanDataset}
-            loading={cleaningLoading}
-            error={cleaningError}
-          />
+          <CleaningAction onClean={handleCleanDataset} loading={cleaningLoading} error={cleaningError} />
 
           {cleaningRun && (
             <div style={{ marginTop: 24 }}>
@@ -439,16 +477,19 @@ export function DatasetDetails() {
 
           <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
             <button type="button" className="button primary" onClick={() => setActiveTab("engineering")}>
-              Continue to Feature Engineering &rarr;
+              Continue to Feature Engineering →
             </button>
           </div>
         </section>
       )}
 
+      {/* ------- Feature Engineering ------- */}
       {activeTab === "engineering" && (
         <section className="analysis-section">
           <div className="section-toolbar">
-            <h2 className="subheading" style={{ margin: 0 }}><Sparkles size={20} /> Feature Engineering Workspace</h2>
+            <h2 className="subheading" style={{ margin: 0 }}>
+              <Sparkles size={20} /> Feature Engineering Workspace
+            </h2>
           </div>
 
           <FeatureOperationSelector
@@ -471,16 +512,19 @@ export function DatasetDetails() {
 
           <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
             <button type="button" className="button primary" onClick={() => setActiveTab("preparation")}>
-              Continue to ML Preparation &rarr;
+              Continue to ML Preparation →
             </button>
           </div>
         </section>
       )}
 
+      {/* ------- ML Preparation ------- */}
       {activeTab === "preparation" && (
         <section className="analysis-section">
           <div className="section-toolbar">
-            <h2 className="subheading" style={{ margin: 0 }}><Layers3 size={20} /> ML Data Preparation Workspace</h2>
+            <h2 className="subheading" style={{ margin: 0 }}>
+              <Layers3 size={20} /> ML Data Preparation Workspace
+            </h2>
           </div>
 
           <PreparationForm
@@ -504,16 +548,19 @@ export function DatasetDetails() {
 
           <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
             <button type="button" className="button primary" onClick={() => setActiveTab("experiments")}>
-              Continue to Experiments &rarr;
+              Continue to Experiments →
             </button>
           </div>
         </section>
       )}
 
+      {/* ------- Experiments ------- */}
       {activeTab === "experiments" && (
         <section className="analysis-section">
           <div className="section-toolbar">
-            <h2 className="subheading" style={{ margin: 0 }}><FlaskConical size={20} /> Model Training Experiments Workspace</h2>
+            <h2 className="subheading" style={{ margin: 0 }}>
+              <FlaskConical size={20} /> Model Training Experiments Workspace
+            </h2>
           </div>
 
           <ExperimentForm
@@ -538,16 +585,19 @@ export function DatasetDetails() {
 
           <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
             <button type="button" className="button primary" onClick={() => setActiveTab("evaluation")}>
-              Continue to Evaluation &rarr;
+              Continue to Evaluation →
             </button>
           </div>
         </section>
       )}
 
+      {/* ------- Evaluation & Prediction ------- */}
       {activeTab === "evaluation" && (
         <section className="analysis-section">
           <div className="section-toolbar">
-            <h2 className="subheading" style={{ margin: 0 }}><Cpu size={20} /> Evaluation & Prediction Workspace</h2>
+            <h2 className="subheading" style={{ margin: 0 }}>
+              <Cpu size={20} /> Evaluation & Prediction Workspace
+            </h2>
           </div>
 
           <div className="workspace-description">
@@ -558,19 +608,24 @@ export function DatasetDetails() {
             <div className="experiment-selector">
               <h3>Select Experiment</h3>
               <select
+                value={experimentRun?.experiment_id.toString() ?? ""}
                 onChange={(e) => {
                   const selectedExperimentId = e.target.value;
-                  const selected = experimentHistory.find(exp => exp.experiment_id.toString() === selectedExperimentId);
+                  const selected = experimentHistory.find(
+                    (exp) => exp.experiment_id.toString() === selectedExperimentId,
+                  );
                   if (selected) {
                     setExperimentRun(selected);
-                    setSelectedModelId(selected.models.find((model) => model.status === "trained")?.model_id ?? null);
+                    setSelectedModelId(
+                      selected.models.find((model) => model.status === "trained")?.model_id ?? null,
+                    );
                     loadEvaluationData(selected);
                   }
                 }}
                 className="experiment-select"
               >
-                <option value="">Select an experiment...</option>
-                {experimentHistory.map(exp => (
+                <option value="">Select an experiment…</option>
+                {experimentHistory.map((exp) => (
                   <option key={exp.experiment_id} value={exp.experiment_id.toString()}>
                     {exp.name} ({exp.problem_type})
                   </option>
@@ -614,37 +669,35 @@ export function DatasetDetails() {
                 />
               )}
 
-              {evaluationSummary && modelComparison && <div style={{ marginTop: 32 }}>
-                <h3>Evaluation Results</h3>
-                <EvaluationSummary summary={evaluationSummary} />
-
-                <h3>Model Rankings</h3>
-                <ModelRanking
-                  comparison={modelComparison}
-                  onModelSelect={setSelectedModelId}
-                />
-
+              {evaluationSummary && modelComparison && (
                 <div style={{ marginTop: 32 }}>
-                <h3>Model Evaluations</h3>
-                <div className="model-evaluations-grid">
-                  {evaluationSummary.evaluations.map((evaluation) => (
-                    <ModelEvaluationCard
-                      key={evaluation.evaluation_id}
-                      evaluation={evaluation}
-                    />
-                  ))}
+                  <h3 className="subheading">Evaluation Results</h3>
+                  <EvaluationSummary summary={evaluationSummary} />
+
+                  <h3 className="subheading" style={{ marginTop: 18 }}>
+                    Model Rankings
+                  </h3>
+                  <ModelRanking comparison={modelComparison} onModelSelect={setSelectedModelId} />
+
+                  <div style={{ marginTop: 24 }}>
+                    <h3 className="subheading">Model Evaluations</h3>
+                    <div className="model-evaluations-grid">
+                      {evaluationSummary.evaluations.map((evaluation) => (
+                        <ModelEvaluationCard
+                          key={evaluation.evaluation_id}
+                          evaluation={evaluation}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                </div>
-              </div>}
+              )}
 
               <ReportGenerationPanel datasetId={datasetId} experimentId={experimentRun.experiment_id} />
 
               <div style={{ marginTop: 32 }}>
-                <h3>Prediction History</h3>
-                <PredictionHistory
-                  datasetId={datasetId}
-                  experimentId={experimentRun.experiment_id}
-                />
+                <h3 className="subheading">Prediction History</h3>
+                <PredictionHistory datasetId={datasetId} experimentId={experimentRun.experiment_id} />
               </div>
             </div>
           )}
@@ -654,53 +707,19 @@ export function DatasetDetails() {
   );
 }
 
-function ProfileContent({ profile }: { profile: DatasetProfileResponse }) {
-  const totalIssues = profile.duplicate_row_count;
-  const totalMissing = profile.columns.reduce((sum, c) => sum + c.null_count, 0);
+/* ------------------------------------------------------------------ */
+/* Profile + Quality sub-views                                        */
+/* ------------------------------------------------------------------ */
 
+function DatasetProfileContent({ profile }: { profile: DatasetProfileResponse }) {
   return (
     <>
-      <div className="metric-grid">
-        <div className="metric-card">
-          <span>Rows</span>
-          <strong>{formatNumber(profile.row_count, 0)}</strong>
-        </div>
-        <div className="metric-card">
-          <span>Columns</span>
-          <strong>{formatNumber(profile.column_count, 0)}</strong>
-        </div>
-        <div className="metric-card accent">
-          <span>Dataset size</span>
-          <strong>{formatBytes(profile.memory_usage)}</strong>
-        </div>
-        <div className="metric-card">
-          <span>Numeric columns</span>
-          <strong>{profile.numerical_column_count}</strong>
-        </div>
-        <div className="metric-card">
-          <span>Categorical columns</span>
-          <strong>{profile.categorical_column_count}</strong>
-        </div>
-        <div className="metric-card">
-          <span>Datetime columns</span>
-          <strong>{profile.datetime_column_count}</strong>
-        </div>
-        <div className="metric-card">
-          <span>Boolean columns</span>
-          <strong>{profile.boolean_column_count}</strong>
-        </div>
-        <div className="metric-card">
-          <span>Missing values</span>
-          <strong>{formatNumber(totalMissing, 0)}</strong>
-        </div>
-        <div className="metric-card">
-          <span>Duplicate rows</span>
-          <strong>{formatNumber(totalIssues, 0)}</strong>
-        </div>
-      </div>
-
+      <DatasetStats profile={profile} />
       {profile.columns.length === 0 ? (
-        <EmptyState title="No columns profiled" body="The dataset has no columns to profile." />
+        <EmptyState
+          title="No columns profiled"
+          body="The dataset has no columns to profile."
+        />
       ) : (
         <ColumnProfileTable columns={profile.columns} />
       )}
@@ -715,7 +734,9 @@ function QualityContent({ quality }: { quality: DataQualityResponse }) {
     <>
       <QualityScoreCard quality={quality} />
 
-      <h3 className="quality-subheading">Quality issues</h3>
+      <h3 className="subheading" style={{ margin: "24px 0 14px" }}>
+        Quality issues
+      </h3>
       {hasIssues ? (
         <QualityIssues issues={quality.issues} />
       ) : (
@@ -725,9 +746,10 @@ function QualityContent({ quality }: { quality: DataQualityResponse }) {
         </div>
       )}
 
-      <h3 className="quality-subheading">Recommendations</h3>
+      <h3 className="subheading" style={{ margin: "24px 0 14px" }}>
+        Recommendations
+      </h3>
       <QualityRecommendations recommendations={quality.recommendations} />
     </>
   );
 }
-

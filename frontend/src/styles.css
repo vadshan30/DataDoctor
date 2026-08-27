@@ -1156,5 +1156,370 @@ button:disabled {
   word-break: break-all;
 }
 
+/* ========================================================================
+   Dataset Details Page
+   ======================================================================== */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 4px 0 32px;
+}
+
+.back-link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--teal);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+
+.back-link:hover {
+  background: var(--mint);
+  color: var(--teal-dark);
+}
+
+/* The boxed dataset header (name + status + version + description + 4 stat tiles) */
+.detail-header-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px 28px;
+  box-shadow: 0 2px 10px rgba(24, 59, 57, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.detail-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.detail-header-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.detail-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--mint);
+  color: var(--teal);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.detail-header-name {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.detail-header-sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 60ch;
+}
+
+.detail-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+  background: var(--mint);
+  color: var(--teal-dark);
+  border: 1px solid #c4e0d1;
+  white-space: nowrap;
+}
+
+.status-pill.large {
+  font-size: 13px;
+  padding: 7px 14px;
+}
+
+.status-pill.status-processing {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: var(--warning-border);
+}
+
+.status-pill.status-ready {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: var(--success-border);
+}
+
+.status-pill.status-failed {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+.status-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+}
+
+.version-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #f4f6f4;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The four stat tiles inside the header card */
+.detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.detail-stats-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fbfdfb;
+  border: 1px solid #edf0ed;
+  min-height: 64px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.detail-stats-tile:hover {
+  border-color: var(--line);
+  background: var(--mint);
+}
+
+.detail-stats-tile-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--mint);
+  color: var(--teal);
+  flex-shrink: 0;
+}
+
+.detail-stats-tile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.detail-stats-tile-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.detail-stats-tile-value {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+/* Loading and empty states used by new sections */
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.loading-state .spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line);
+  border-top-color: var(--teal);
+  border-radius: 50%;
+  animation: dd-spin 0.7s linear infinite;
+}
+
+@keyframes dd-spin {
+  to { transform: rotate(360deg); }
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 16px;
+  background: #fbfdfb;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  gap: 6px;
+}
+
+.empty-state h3 {
+  margin: 4px 0 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.empty-state p {
+  margin: 0;
+  font-size: 13px;
+  max-width: 50ch;
+}
+
+.empty-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: var(--mint);
+  color: var(--teal);
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.h1, h1 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.subheading {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.workspace-description {
+  background: #fbfdfb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workspace-description p {
+  margin: 0;
+}
+
+.experiment-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.experiment-selector h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.experiment-select {
+  width: 100%;
+  max-width: 420px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.experiment-select:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(18, 107, 104, 0.12);
+}
+
+.model-evaluations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.table-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  background: #fbfdfb;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+
 
 
