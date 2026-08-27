@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+import secrets
+import time
 
 from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
@@ -37,6 +39,37 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
         )
 
+    access_token = create_access_token(subject=user.id)
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "email": user.email,
+    }
+
+
+@router.post("/guest")
+def guest_login(db: Session = Depends(get_db)):
+    """Create a temporary guest user account"""
+    # Generate a unique email for the guest
+    timestamp = int(time.time())
+    random_str = secrets.token_hex(8)
+    guest_email = f"guest-{timestamp}-{random_str}@datadoctor.local"
+
+    # Generate a random password
+    guest_password = secrets.token_hex(16)
+
+    # Create guest user with full_name indicating it's a guest
+    user = User(
+        email=guest_email,
+        hashed_password=hash_password(guest_password),
+        full_name="Guest User",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Return auth response
     access_token = create_access_token(subject=user.id)
     return {
         "access_token": access_token,

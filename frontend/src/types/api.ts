@@ -422,3 +422,20 @@ export interface ErrorResponse {
 }
 
 
+
+// ---------------------------------------------------------------------------
+// Reports types
+// ---------------------------------------------------------------------------
+
+export interface ReportGenerationRequest {
+  dataset_id: number | string;
+  experiment_id?: number | string;
+  report_type: string;
+}
+
+export interface ReportGenerationResponse {
+  message: string;
+  report_url?: string;
+  report_data?: any;
+}
+

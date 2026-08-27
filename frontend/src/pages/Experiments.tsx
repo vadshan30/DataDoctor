@@ -1,4 +1,5 @@
 import { FlaskConical } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function Experiments() {
   return (
@@ -15,10 +16,13 @@ export function Experiments() {
         <div className="w-16 h-16 mb-5 rounded-full bg-teal-50 flex items-center justify-center text-teal-600">
           <FlaskConical size={32} />
         </div>
-        <h3 className="text-xl font-bold text-gray-900 mb-2">No experiments yet</h3>
-        <p className="text-gray-500 max-w-sm mx-auto leading-relaxed">
-          Start a new experiment from a dataset to track runs and results here.
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Global Experiments Under Construction</h3>
+        <p className="text-gray-500 max-w-md mx-auto leading-relaxed mb-6">
+          Experiments are currently managed directly within the context of a dataset. To create, train, or evaluate an experiment, please open a dataset workspace.
         </p>
+        <Link to="/datasets" className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg shadow-sm transition-colors duration-200">
+          Go to Datasets
+        </Link>
       </div>
     </div>
   );

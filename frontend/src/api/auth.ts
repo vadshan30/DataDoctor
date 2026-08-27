@@ -10,3 +10,7 @@ export function register(email: string, password: string, fullName: string) {
   if (fullName) params.set("full_name", fullName);
   return apiRequest<{ id: number; email: string }>(`/auth/register?${params}`, { method: "POST" });
 }
+
+export function guest() {
+  return apiRequest<AuthResponse>("/auth/guest", { method: "POST" });
+}

@@ -1,4 +1,5 @@
 import { FileText } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function Reports() {
   return (
@@ -15,10 +16,13 @@ export function Reports() {
         <div className="w-16 h-16 mb-5 rounded-full bg-teal-50 flex items-center justify-center text-teal-600">
           <FileText size={32} />
         </div>
-        <h3 className="text-xl font-bold text-gray-900 mb-2">No reports yet</h3>
-        <p className="text-gray-500 max-w-sm mx-auto leading-relaxed">
-          Run quality checks or profiling on a dataset to generate reports here.
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Global Reports Under Construction</h3>
+        <p className="text-gray-500 max-w-md mx-auto leading-relaxed mb-6">
+          Reports are generated at the dataset and experiment level. To generate a report, please open a dataset's evaluation workspace.
         </p>
+        <Link to="/datasets" className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg shadow-sm transition-colors duration-200">
+          Go to Datasets
+        </Link>
       </div>
     </div>
   );

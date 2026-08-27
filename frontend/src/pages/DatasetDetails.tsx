@@ -39,6 +39,7 @@ import { PredictionPanel } from "../components/prediction/PredictionPanel";
 import { PredictionResult } from "../components/prediction/PredictionResult";
 import { BatchPredictionPanel } from "../components/prediction/BatchPredictionPanel";
 import { PredictionHistory } from "../components/prediction/PredictionHistory";
+import { ReportGenerationPanel } from "../components/reports/ReportGenerationPanel";
 import { formatBytes, formatNumber } from "../utils/helpers";
 import type {
   CleaningResultResponse,
@@ -377,7 +378,14 @@ export function DatasetDetails() {
           {profile.status === "loading" && <LoadingSpinner />}
           {profile.status === "error" && <ErrorMessage message={profile.error} />}
           {profile.status === "success" && (
-            <ProfileContent profile={profile.data} />
+            <>
+              <ProfileContent profile={profile.data} />
+              <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" className="button primary" onClick={() => setActiveTab("quality")}>
+                  Continue to Data Quality &rarr;
+                </button>
+              </div>
+            </>
           )}
         </section>
       )}
@@ -393,7 +401,14 @@ export function DatasetDetails() {
           {quality.status === "loading" && <LoadingSpinner />}
           {quality.status === "error" && <ErrorMessage message={quality.error} />}
           {quality.status === "success" && (
-            <QualityContent quality={quality.data} />
+            <>
+              <QualityContent quality={quality.data} />
+              <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" className="button primary" onClick={() => setActiveTab("cleaning")}>
+                  Continue to Data Cleaning &rarr;
+                </button>
+              </div>
+            </>
           )}
         </section>
       )}
@@ -421,6 +436,12 @@ export function DatasetDetails() {
           )}
 
           <CleaningHistory runs={cleaningHistory} />
+
+          <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" className="button primary" onClick={() => setActiveTab("engineering")}>
+              Continue to Feature Engineering &rarr;
+            </button>
+          </div>
         </section>
       )}
 
@@ -447,6 +468,12 @@ export function DatasetDetails() {
           )}
 
           <FeatureEngineeringHistory runs={engineeringHistory} />
+
+          <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" className="button primary" onClick={() => setActiveTab("preparation")}>
+              Continue to ML Preparation &rarr;
+            </button>
+          </div>
         </section>
       )}
 
@@ -474,6 +501,12 @@ export function DatasetDetails() {
           )}
 
           <PreparationHistory runs={preparedHistory} />
+
+          <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" className="button primary" onClick={() => setActiveTab("experiments")}>
+              Continue to Experiments &rarr;
+            </button>
+          </div>
         </section>
       )}
 
@@ -502,6 +535,12 @@ export function DatasetDetails() {
           )}
 
           <ExperimentHistory experiments={experimentHistory} />
+
+          <div style={{ marginTop: 32, display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" className="button primary" onClick={() => setActiveTab("evaluation")}>
+              Continue to Evaluation &rarr;
+            </button>
+          </div>
         </section>
       )}
 
@@ -597,6 +636,8 @@ export function DatasetDetails() {
                 </div>
                 </div>
               </div>}
+
+              <ReportGenerationPanel datasetId={datasetId} experimentId={experimentRun.experiment_id} />
 
               <div style={{ marginTop: 32 }}>
                 <h3>Prediction History</h3>
