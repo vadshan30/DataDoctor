@@ -1,8 +1,127 @@
-import { RefreshCw, Upload } from "lucide-react";
+import { RefreshCw, Upload, Database } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listDatasets } from "../api/datasets";
 import { FileUpload } from "../components/FileUpload";
-import { EmptyState, ErrorMessage, LoadingSpinner } from "../components/common/States";
+import { ErrorMessage, LoadingSpinner } from "../components/common/States";
 import type { Dataset } from "../types/api";
-export function Datasets() { const [datasets, setDatasets] = useState<Dataset[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [uploading, setUploading] = useState(false); const load = async () => { setLoading(true); setError(""); try { setDatasets((await listDatasets()).datasets); } catch (err) { setError(err instanceof Error ? err.message : "Unable to load datasets."); } finally { setLoading(false); } }; useEffect(() => { void load(); }, []); return <div className="page"><div className="page-heading"><div><p className="eyebrow">Workspace library</p><h1>Datasets</h1><p className="muted">Your owned sources and their current preparation status.</p></div><button className="button primary" onClick={() => setUploading(true)}><Upload size={16} />Upload dataset</button></div><div className="section-toolbar"><span>{datasets.length} {datasets.length === 1 ? "dataset" : "datasets"}</span><button className="text-button" onClick={() => void load()}><RefreshCw size={15} />Refresh</button></div>{loading ? <LoadingSpinner /> : error ? <ErrorMessage message={error} /> : datasets.length === 0 ? <EmptyState title="No datasets yet" body="Upload a CSV or spreadsheet to start exploring your data." /> : <div className="dataset-list">{datasets.map((dataset) => <Link className="dataset-row" to={`/datasets/${dataset.dataset_id}`} key={dataset.dataset_id}><div className="file-badge">{dataset.file_type.toUpperCase()}</div><div className="dataset-name"><strong>{dataset.name}</strong><span>{dataset.description || "No description"}</span></div><div className="dataset-stats"><span>{dataset.row_count.toLocaleString()} rows</span><span>{dataset.column_count} columns</span></div><span className="status-pill">{dataset.status}</span></Link>)}</div>}{uploading && <FileUpload onClose={() => setUploading(false)} onUploaded={(dataset) => setDatasets((current) => [dataset, ...current])} />}</div>; }
+
+export function Datasets() { 
+  const [datasets, setDatasets] = useState<Dataset[]>([]); 
+  const [loading, setLoading] = useState(true); 
+  const [error, setError] = useState(""); 
+  const [uploading, setUploading] = useState(false); 
+
+  const load = async () => { 
+    setLoading(true); 
+    setError(""); 
+    try { 
+      setDatasets((await listDatasets()).datasets); 
+    } catch (err) { 
+      setError(err instanceof Error ? err.message : "Unable to load datasets."); 
+    } finally { 
+      setLoading(false); 
+    } 
+  }; 
+
+  useEffect(() => { 
+    void load(); 
+  }, []); 
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold text-teal-600 tracking-wider uppercase mb-1">Workspace library</p>
+          <h1 className="text-3xl font-bold text-gray-900">Datasets</h1>
+          <p className="text-gray-500 mt-1">Your owned sources and their current preparation status.</p>
+        </div>
+        <button 
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-semibold rounded-xl shadow-sm transition-all hover:shadow-md" 
+          onClick={() => setUploading(true)}
+        >
+          <Upload size={18} />
+          Upload dataset
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between pb-4 border-b border-gray-200">
+        <span className="text-sm font-medium text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
+          {datasets.length} {datasets.length === 1 ? "dataset" : "datasets"} total
+        </span>
+        <button 
+          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors" 
+          onClick={() => void load()}
+        >
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+
+      <div className="min-h-[400px] flex flex-col">
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>
+        ) : error ? (
+          <ErrorMessage message={error} />
+        ) : datasets.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-white border border-gray-200 border-dashed rounded-2xl shadow-sm">
+            <div className="w-16 h-16 mb-5 rounded-full bg-teal-50 flex items-center justify-center text-teal-600">
+              <Database size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">No datasets yet</h3>
+            <p className="text-gray-500 max-w-sm mx-auto mb-6 leading-relaxed">
+              Upload a CSV or spreadsheet to start exploring your data and running quality checks.
+            </p>
+            <button 
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white border-2 border-teal-700 text-teal-700 hover:bg-teal-50 font-bold rounded-xl transition-colors shadow-sm"
+              onClick={() => setUploading(true)}
+            >
+              <Upload size={18} />
+              Upload your first dataset
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {datasets.map((dataset) => (
+              <Link 
+                className="flex flex-col sm:flex-row sm:items-center gap-5 p-5 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-teal-300 transition-all group" 
+                to={`/datasets/${dataset.dataset_id}`} 
+                key={dataset.dataset_id}
+              >
+                <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 bg-teal-50 text-teal-700 font-bold rounded-xl text-sm tracking-wider group-hover:bg-teal-100 transition-colors">
+                  {dataset.file_type.toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-lg font-bold text-gray-900 truncate mb-1 group-hover:text-teal-700 transition-colors">{dataset.name}</h4>
+                  <p className="text-sm text-gray-500 truncate">{dataset.description || "No description provided"}</p>
+                </div>
+                <div className="flex items-center gap-8 text-sm text-gray-600 px-4">
+                  <div className="flex flex-col items-center">
+                    <span className="font-bold text-gray-900 text-base">{dataset.row_count.toLocaleString()}</span>
+                    <span className="text-xs uppercase tracking-wider text-gray-500 font-semibold mt-0.5">Rows</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="font-bold text-gray-900 text-base">{dataset.column_count}</span>
+                    <span className="text-xs uppercase tracking-wider text-gray-500 font-semibold mt-0.5">Columns</span>
+                  </div>
+                </div>
+                <div className="flex-shrink-0 ml-2">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-green-100 text-green-800 border border-green-200">
+                    {dataset.status}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {uploading && (
+        <FileUpload 
+          onClose={() => setUploading(false)} 
+          onUploaded={(dataset) => setDatasets((current) => [dataset, ...current])} 
+        />
+      )}
+    </div>
+  ); 
+}

@@ -1,14 +1,17 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
-import { AppLayout } from "./components/layout/AppLayout";
 import { ProtectedRoute } from "./components/layout/ProtectedRoute";
-import { Dashboard } from "./pages/Dashboard";
+import { Dashboard } from "./components/Dashboard";
+import { Home } from "./pages/Home";
 import { DatasetDetails } from "./pages/DatasetDetails";
 import { Datasets } from "./pages/Datasets";
+import { Experiments } from "./pages/Experiments";
+import { Reports } from "./pages/Reports";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
+import "./index.css";
 
 function AuthenticatedLayout() {
-	return <AppLayout><Outlet /></AppLayout>;
+	return <Dashboard><Outlet /></Dashboard>;
 }
 
 export default function App() {
@@ -18,8 +21,10 @@ export default function App() {
 			<Route path="/register" element={<Register />} />
 			<Route element={<ProtectedRoute />}>
 				<Route element={<AuthenticatedLayout />}>
-					<Route path="/dashboard" element={<Dashboard />} />
+					<Route path="/dashboard" element={<Home />} />
 					<Route path="/datasets" element={<Datasets />} />
+					<Route path="/experiments" element={<Experiments />} />
+					<Route path="/reports" element={<Reports />} />
 					<Route path="/datasets/:datasetId" element={<DatasetDetails />} />
 					<Route path="/datasets/:datasetId/experiments" element={<DatasetDetails />} />
 					<Route path="/datasets/:datasetId/reports" element={<DatasetDetails />} />
