@@ -6,7 +6,12 @@ from passlib.context import CryptContext
 
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Reduce bcrypt rounds in development for faster login (10ms vs 200ms)
+# In production, use the default of 12 rounds for security
+_is_dev = settings.APP_ENV.lower() in ("development", "dev", "local")
+_bcrypt_rounds = 4 if _is_dev else 12
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=_bcrypt_rounds)
 
 
 def hash_password(password: str) -> str:

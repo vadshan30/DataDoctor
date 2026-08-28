@@ -33,6 +33,15 @@ export function Login() {
         <Field label="Email" type="email" value={email} onChange={setEmail} required />
         <Field label="Password" type="password" value={password} onChange={setPassword} required />
 
+        <div className="flex justify-end -mt-2">
+          <Link
+            to="/forgot-password"
+            className="text-sm text-gray-500 hover:text-teal-700 hover:underline transition-colors"
+          >
+            Forgot password?
+          </Link>
+        </div>
+
         {error && (
           <p className="text-red-600 text-sm mt-1">
             {error}
