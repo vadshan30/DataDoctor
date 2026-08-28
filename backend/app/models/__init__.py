@@ -8,6 +8,7 @@ from app.models.experiment import Experiment
 from app.models.ml_ready_dataset import MLReadyDataset
 from app.models.model import TrainedModel
 from app.models.prediction import PredictionRecord
+from app.models.password_reset_token import PasswordResetToken
 from app.models.report import Report
 from app.models.user import User
 
@@ -23,5 +24,6 @@ __all__ = [
     "TrainedModel",
     "ModelEvaluation",
     "PredictionRecord",
+    "PasswordResetToken",
     "Report",
 ]

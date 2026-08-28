@@ -1,21 +1,27 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+import html
+import logging
 import secrets
 import time
+from urllib.parse import quote
 
+import resend
+
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
+from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# In-memory store for password reset tokens.
-# Format: { token: { email: str, expires_at: float } }
-# For a real deployment, persist this in the database with an expiry.
-_PASSWORD_RESET_TOKENS: dict[str, dict] = {}
-_RESET_TOKEN_TTL_SECONDS = 60 * 30  # 30 minutes
+_RESET_TOKEN_TTL_MINUTES = 30
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -25,6 +31,46 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+
+
+def send_reset_email(email: str, reset_link: str) -> None:
+    """Send a password reset email through Resend."""
+    if not settings.RESEND_API_KEY or not settings.FROM_EMAIL:
+        raise RuntimeError("RESEND_API_KEY and FROM_EMAIL must be configured")
+    if "@" not in settings.FROM_EMAIL:
+        raise RuntimeError("FROM_EMAIL must be a valid email address")
+
+    resend.api_key = settings.RESEND_API_KEY
+    safe_email = html.escape(email)
+    safe_reset_link = html.escape(reset_link, quote=True)
+
+    resend.Emails.send(
+        {
+            "from": settings.FROM_EMAIL,
+            "to": [email],
+            "subject": "Reset your DataDoctor password",
+            "html": f"""
+                <div style="margin:0;background:#f4f7f6;padding:40px 16px;font-family:Arial,sans-serif;color:#1f2933">
+                    <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #d9e2df;border-radius:12px;padding:40px">
+                        <p style="margin:0 0 24px;color:#0f766e;font-size:24px;font-weight:700">DataDoctor</p>
+                        <h1 style="margin:0 0 16px;font-size:26px;color:#172b2a">Reset your password</h1>
+                        <p style="font-size:16px;line-height:1.6">We received a request to reset the password for {safe_email}.</p>
+                        <p style="font-size:16px;line-height:1.6">Use the button below to choose a new password. This link expires in 30 minutes.</p>
+                        <p style="margin:32px 0"><a href="{safe_reset_link}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:8px;padding:14px 24px;font-weight:700">Reset password</a></p>
+                        <p style="font-size:13px;line-height:1.6;color:#52605e">If the button does not work, copy and paste this link into your browser:</p>
+                        <p style="font-size:13px;line-height:1.6;word-break:break-all"><a href="{safe_reset_link}" style="color:#0f766e">{safe_reset_link}</a></p>
+                        <p style="margin:28px 0 0;font-size:13px;line-height:1.6;color:#52605e">If you did not request a password reset, you can safely ignore this email. Your password will not change.</p>
+                    </div>
+                </div>
+            """,
+            "text": (
+                "Reset your DataDoctor password\n\n"
+                "Use this link to choose a new password (expires in 30 minutes):\n"
+                f"{reset_link}\n\n"
+                "If you did not request a password reset, you can safely ignore this email."
+            ),
+        }
+    )
 
 
 @router.post("/register")
@@ -101,25 +147,45 @@ async def guest_login(db: Session = Depends(get_db)):
 @router.post("/forgot-password")
 async def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
     """Generate a password reset token for the given email.
-
-    Returns success even when the email is not found to avoid leaking which
-    addresses are registered. The token is logged to stdout so the developer
-    can use it without an email service in development.
+    
+    Only sends email if the user exists in the database.
+    Returns a clear error if the email is not registered.
     """
-    # Garbage-collect expired tokens to bound memory usage
-    now = time.time()
-    for tok in [t for t, rec in _PASSWORD_RESET_TOKENS.items() if rec["expires_at"] < now]:
-        _PASSWORD_RESET_TOKENS.pop(tok, None)
+    now = datetime.now(timezone.utc)
+    db.execute(delete(PasswordResetToken).where(PasswordResetToken.expires_at < now))
+    db.commit()
 
+    # Check if user exists
     user = db.scalar(select(User).where(User.email == payload.email))
-    if user:
-        token = secrets.token_urlsafe(32)
-        _PASSWORD_RESET_TOKENS[token] = {
-            "email": payload.email,
-            "expires_at": now + _RESET_TOKEN_TTL_SECONDS,
-        }
-        reset_link = f"http://localhost:5173/reset-password?token={token}"
-        print(f"[DataDoctor] Password reset link for {payload.email}: {reset_link}")
+    
+    # If user doesn't exist, return 404 error
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User with this email not found",
+        )
+
+    # User exists - persist the token before sending the email.
+    token = secrets.token_urlsafe(32)
+    reset_token = PasswordResetToken(
+        user_id=user.id,
+        token=token,
+        expires_at=now + timedelta(minutes=_RESET_TOKEN_TTL_MINUTES),
+    )
+    db.add(reset_token)
+    db.commit()
+    reset_link = f"http://localhost:5173/reset-password?token={quote(token)}"
+    
+    try:
+        send_reset_email(payload.email, reset_link)
+        logger.info(f"Password reset email sent to {payload.email}")
+    except Exception as e:
+        logger.exception("Unable to send password reset email")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send reset email. Please try again later.",
+        )
+    
     return {"message": "Password reset link sent to your email"}
 
 
@@ -132,14 +198,20 @@ async def reset_password(payload: ResetPasswordRequest, db: Session = Depends(ge
             detail="Password must be at least 8 characters long",
         )
 
-    record = _PASSWORD_RESET_TOKENS.pop(payload.token, None)
-    if not record or record["expires_at"] < time.time():
+    now = datetime.now(timezone.utc)
+    db.execute(delete(PasswordResetToken).where(PasswordResetToken.expires_at < now))
+    db.commit()
+
+    record = db.scalar(
+        select(PasswordResetToken).where(PasswordResetToken.token == payload.token)
+    )
+    if not record or record.used or record.expires_at < now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token",
         )
 
-    user = db.scalar(select(User).where(User.email == record["email"]))
+    user = db.scalar(select(User).where(User.id == record.user_id))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -147,5 +219,7 @@ async def reset_password(payload: ResetPasswordRequest, db: Session = Depends(ge
         )
 
     user.hashed_password = hash_password(payload.new_password)
+    record.used = True
     db.commit()
+    logger.info(f"Password reset successfully for {user.email}")
     return {"message": "Password updated successfully"}

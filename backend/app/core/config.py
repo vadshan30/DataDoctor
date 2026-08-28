@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
+    RESEND_API_KEY: str = ""
+    FROM_EMAIL: str = ""
+
     UPLOAD_DIR: str = "uploads"
     MODEL_DIR: str = "models"
     REPORT_DIR: str = "reports"
@@ -32,6 +35,7 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "http://localhost:8080",
     ]
 

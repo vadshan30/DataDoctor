@@ -7,7 +7,7 @@ from alembic import context
 
 # Import your models' Base
 from app.core.database import Base
-from app.models import User, Dataset, CleanedDataset, EngineeredDataset, MLReadyDataset, Experiment, Report, DataQualityReport, DatasetProfile
+from app.models import User, Dataset, CleanedDataset, EngineeredDataset, MLReadyDataset, Experiment, Report, DataQualityReport, DatasetProfile, PasswordResetToken
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
