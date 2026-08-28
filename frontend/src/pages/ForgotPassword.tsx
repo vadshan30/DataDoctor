@@ -16,10 +16,10 @@ export function ForgotPassword() {
     setLoading(true);
     try {
       await requestPasswordReset(email);
-      // eslint-disable-next-line no-console
-      console.log(`[DataDoctor] Password reset requested for ${email}. Reset token logged on the server.`);
       setSuccess(true);
     } catch (err) {
+      // Keep the original error available in DevTools when fetch fails before receiving a response.
+      console.error("[DataDoctor] Password reset request failed", err);
       setError(err instanceof Error ? err.message : "Unable to process request. Please try again.");
     } finally {
       setLoading(false);

@@ -1,4 +1,11 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
+const configuredApiUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = (
+  configuredApiUrl
+    ? configuredApiUrl.endsWith("/api/v1")
+      ? configuredApiUrl
+      : `${configuredApiUrl}/api/v1`
+    : "http://localhost:8000/api/v1"
+).replace(/\/$/, "");
 
 export class ApiError extends Error {
   status: number;

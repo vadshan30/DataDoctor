@@ -19,25 +19,27 @@ class FeatureValidationError(BaseModel):
 
 class PredictionResult(BaseModel):
     model_id: int
+    trained_model_id: int | None = None
     model_name: str
     algorithm: str
     model_type: str
     problem_type: str
     prediction: Any
     input_data: dict[str, Any] | None = None
-    created_at: datetime
+    created_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class BatchPredictionResult(BaseModel):
     model_id: int
+    trained_model_id: int | None = None
     model_name: str
     algorithm: str
     model_type: str
     problem_type: str
     predictions: list[Any]
     input_data: list[dict[str, Any]] | None = None
-    created_at: datetime
+    created_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
@@ -55,6 +57,7 @@ class PredictionRecordResponse(BaseModel):
 class PredictionRecordListResponse(BaseModel):
     predictions: list[PredictionRecordResponse]
     total: int
+    total_predictions: int | None = None
 
 
 class ErrorResponse(BaseModel):

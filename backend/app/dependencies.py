@@ -1,12 +1,12 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def _decode_token_safe(token: str):
@@ -17,7 +17,7 @@ def _decode_token_safe(token: str):
 
 
 def get_current_user(
-    token: str | None = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     credentials_exception = HTTPException(
@@ -26,10 +26,10 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if token is None:
+    if credentials is None:
         raise credentials_exception
 
-    payload = _decode_token_safe(token)
+    payload = _decode_token_safe(credentials.credentials)
     if payload is None:
         raise credentials_exception
 
