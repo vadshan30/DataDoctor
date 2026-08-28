@@ -34,7 +34,10 @@ from app.schemas.experiment import (
 )
 from app.schemas.prediction import (
     BatchPredictionRequest,
+    BatchPredictionResult,
     PredictionRequest,
+    PredictionRecordListResponse,
+    PredictionResult,
 )
 from app.schemas.report import (
     ReportGenerationRequest,
@@ -1144,7 +1147,11 @@ def get_model_explainability_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict")
+@router.post(
+    "/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict",
+    response_model=PredictionResult,
+    tags=["predictions"],
+)
 def predict_endpoint(
     dataset_id: int,
     experiment_id: int,
@@ -1181,7 +1188,9 @@ def predict_endpoint(
 
 
 @router.post(
-    "/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict/batch"
+    "/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict/batch",
+    response_model=BatchPredictionResult,
+    tags=["predictions"],
 )
 def predict_batch_endpoint(
     dataset_id: int,
@@ -1210,7 +1219,9 @@ def predict_batch_endpoint(
 
 
 @router.get(
-    "/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict"
+    "/{dataset_id}/experiments/{experiment_id}/models/{model_id}/predict",
+    response_model=PredictionRecordListResponse,
+    tags=["predictions"],
 )
 def get_model_predictions(
     dataset_id: int,
@@ -1234,10 +1245,12 @@ def get_model_predictions(
         "model_id": model_id,
         "model_name": tm.name,
         "algorithm": tm.algorithm,
+        "total": len(records),
         "total_predictions": len(records),
         "predictions": [
             {
                 "id": r.id,
+                "experiment_id": r.experiment_id,
                 "trained_model_id": r.trained_model_id,
                 "input_data": r.input_data,
                 "prediction": r.prediction,
@@ -1250,7 +1263,9 @@ def get_model_predictions(
 
 
 @router.get(
-    "/{dataset_id}/experiments/{experiment_id}/predictions"
+    "/{dataset_id}/experiments/{experiment_id}/predictions",
+    response_model=PredictionRecordListResponse,
+    tags=["predictions"],
 )
 def get_experiment_predictions(
     dataset_id: int,
@@ -1278,10 +1293,12 @@ def get_experiment_predictions(
     return {
         "experiment_id": experiment.id,
         "experiment_name": experiment.name,
+        "total": len(records),
         "total_predictions": len(records),
         "predictions": [
             {
                 "id": r.id,
+                "experiment_id": r.experiment_id,
                 "trained_model_id": r.trained_model_id,
                 "input_data": r.input_data,
                 "prediction": r.prediction,
