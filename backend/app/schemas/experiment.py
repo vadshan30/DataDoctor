@@ -43,6 +43,7 @@ class ModelResultResponse(BaseModel):
 class ExperimentResponse(BaseModel):
     experiment_id: int = Field(validation_alias="id")
     dataset_id: int
+    dataset_name: str | None = None
     ml_ready_dataset_id: int | None = None
     name: str
     experiment_type: str

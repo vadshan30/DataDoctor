@@ -81,10 +81,6 @@ export function Dashboard({ children }: { children: ReactNode }) {
               <h2 className="text-lg font-semibold text-gray-900 leading-tight">Data Operations</h2>
             </div>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-full border border-green-100">
-            <span className="flex w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            <span className="text-xs font-semibold text-green-700">API connected</span>
-          </div>
         </header>
         
         {/* Main Content Area */}

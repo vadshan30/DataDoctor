@@ -210,9 +210,12 @@ class ReportResponse(BaseModel):
     """API response for a single report."""
 
     report_id: int = Field(validation_alias="id")
+    name: str | None = None
     report_type: str
     dataset_id: int
+    dataset_name: str | None = None
     experiment_id: int | None = None
+    experiment_name: str | None = None
     owner_id: int
     status: str
     created_at: datetime

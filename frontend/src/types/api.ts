@@ -266,6 +266,7 @@ export interface ModelResultResponse {
 export interface ExperimentResponse {
   experiment_id: number;
   dataset_id: number;
+  dataset_name: string | null;
   ml_ready_dataset_id: number | null;
   name: string;
   experiment_type: string;
@@ -437,5 +438,40 @@ export interface ReportGenerationResponse {
   message: string;
   report_url?: string;
   report_data?: any;
+}
+
+export interface ReportResponse {
+  report_id: number;
+  name: string | null;
+  report_type: string;
+  dataset_id: number;
+  dataset_name: string | null;
+  experiment_id?: number | null;
+  experiment_name: string | null;
+  owner_id: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  report_data?: any;
+  error_message?: string | null;
+}
+
+export interface ReportListResponse {
+  reports: ReportResponse[];
+  total: number;
+}
+
+// ---------------------------------------------------------------------------
+// Global API endpoints
+// ---------------------------------------------------------------------------
+
+export interface GlobalExperimentListResponse {
+  experiments: ExperimentResponse[];
+  total: number;
+}
+
+export interface GlobalReportListResponse {
+  reports: ReportResponse[];
+  total: number;
 }
 
